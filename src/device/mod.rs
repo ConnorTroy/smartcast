@@ -1,6 +1,7 @@
-use super::constants;
+mod command;
+
+use super::constant;
 use super::discover;
-use super::pair::Pairing;
 use super::error::{Error, Result};
 
 use reqwest::Client;
@@ -19,7 +20,6 @@ pub struct Device {
     uuid: String,
     auth_token: Option<String>,
     client: Option<Client>,
-    pub(crate) pairing: Option<Pairing>,
 }
 
 impl Device {
@@ -39,7 +39,6 @@ impl Device {
             uuid,
             auth_token: None,
             client: None,
-            pairing: None,
         }
     }
 
@@ -47,7 +46,7 @@ impl Device {
         if self.client.is_none() {
             self.client = Some(
                 reqwest::Client::builder()
-                .timeout(Duration::from_secs(constants::DEFAULT_TIMEOUT))
+                .timeout(Duration::from_secs(constant::DEFAULT_TIMEOUT))
                 .https_only(true)
                 .build()?
             );
@@ -86,11 +85,55 @@ impl Device {
         self.auth_token.clone()
     }
 
-    /// Set client's auth token for device (if already paired). Returns an error
-    /// if connection fails.
-    pub fn set_auth_token(&mut self, token: String) -> Result<()> {
-        self.auth_token = Some(token);
-        // TO-DO: Verify token
+    /// Begin the pairing process.
+    ///
+    /// Upon calling this method, the device will enter pairing mode.
+    /// If the device is a tv, it will display a pin to be entered using [`finish_pair()`](./struct.Device.html/#method.finish_pair).
+    pub async fn begin_pair(&mut self, client_id: String, client_name: String) -> Result<()> {
+        // TO-DO
+
         Ok(())
     }
+
+    /// Finish the pairing process.
+    ///
+    /// Upon calling this method with the pin displayed by the device, the
+    /// pairing process will end and the client will be paired.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let client_id = "myapp-rs".to_string();
+    /// let client_name = "My App Name".to_string();
+    ///
+    /// device.begin_pair(client_id, client_name).await?;
+    ///
+    /// let mut pin = String::new();
+    /// stdin().read_line(&mut pin)?;
+    ///
+    /// device.finish_pair(pin).await?;
+    /// ```
+    pub async fn finish_pair(&mut self, pin: String) -> Result<()> {
+        // TO-DO
+
+        Ok(())
+    }
+
+    /// Cancel the pairing process.
+    ///
+    /// Upon calling this method, the pairing process will be canceled and the
+    /// device will leave pairing mode.
+    pub async fn cancel_pair(&mut self) -> Result<()> {
+        // TO-DO
+        
+        Ok(())
+    }
+
+    // /// Set client's auth token for device (if already paired). Returns an error
+    // /// if connection fails.
+    // pub fn set_auth_token(&mut self, token: String) -> Result<()> {
+    //     self.auth_token = Some(token);
+    //     // TO-DO: Verify token
+    //     Ok(())
+    // }
 }

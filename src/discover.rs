@@ -1,5 +1,5 @@
 use super::{Device, Result};
-use super::constants::DEFAULT_TIMEOUT;
+use super::constant::DEFAULT_TIMEOUT;
 
 use regex::Regex;
 

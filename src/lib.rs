@@ -1,11 +1,9 @@
 
 mod device;
-mod pair;
-mod commands;
-mod constants;
+mod constant;
 mod discover;
 mod error;
-use constants::*;
+use constant::*;
 
 pub use device::Device;
 pub use error::{Error, Result};
