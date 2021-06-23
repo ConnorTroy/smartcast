@@ -4,13 +4,15 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Error for API calls from [`Device`](super::Device)
 #[derive(Debug)]
 pub enum Error {
-    /// Too many failed pair attempts
+    /// Pairing: Too many failed pair attempts
     MaxChallengesExceeded,
-    /// Incorrect pin
+    /// Pairing: Incorrect pin
     PairingDenied,
-    /// Pin out of range
+    /// Pairing: Pin out of range
     ValueOutOfRange,
-    /// Pairing is already in progress
+    /// Pairing: Incorrect challenge
+    ChallengeIncorrect,
+    /// Pairing: is already in progress
     Blocked,
     /// Unknown command failure
     Failure,
@@ -48,10 +50,12 @@ pub enum Error {
     NetUnknown,
     /// Error from http client
     Reqwest(reqwest::Error),
-    /// Error processing json command
-    Json(serde_json::Error),
     /// Error from std::io
     StdIO(std::io::Error),
+    #[doc(hidden)]
+    /// Error processing json command
+    // Json(serde_json::Error),
+    Other(String),
 }
 
 impl From<reqwest::Error> for Error {
@@ -60,15 +64,21 @@ impl From<reqwest::Error> for Error {
     }
 }
 
-impl From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Error {
-        Error::Json(e)
-    }
-}
+// impl From<serde_json::Error> for Error {
+//     fn from(e: serde_json::Error) -> Error {
+//         Error::Json(e)
+//     }
+// }
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Error {
         Error::StdIO(e)
+    }
+}
+
+impl From<std::string::String> for Error {
+    fn from(e: std::string::String) -> Error {
+        Error::Other(e)
     }
 }
 
@@ -83,6 +93,9 @@ impl std::fmt::Display for Error {
             },
             Error::ValueOutOfRange => {
                 write!(f, "Pin out of range")
+            },
+            Error::ChallengeIncorrect => {
+                write!(f, "Incorrect challenge")
             },
             Error::Blocked => {
                 write!(f, "Pairing is already in progress")
@@ -138,7 +151,8 @@ impl std::fmt::Display for Error {
             Error::NetUnknown => {
                 write!(f, "Unknown Network Error")
             },
-            Error::Reqwest(_) | Error::Json(_) | Error::StdIO(_) => {
+            Error::Reqwest(_)// | Error::Json(_)
+            | Error::StdIO(_) | Error::Other(_)=> {
                 write!(f, "{}", self)
             }
         }

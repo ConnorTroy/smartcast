@@ -45,12 +45,12 @@ async fn uaudp_followup(ssdp_response: &[u8; 1024]) -> Result<Option<Device>> {
                 "URLBase" => {
                     // Extract ip from base url (strip http and port)
                     let mut field_chars = field.chars();
-                    let ip_start = field_chars.position(|c| c == '/').unwrap() + 1;
-                    let ip_end = field_chars.position(|c| c == ':').unwrap();
+                    let ip_start = field_chars.position(|c| c == '/').unwrap() + 2;
+                    let ip_end = field_chars.position(|c| c == ':').unwrap() - 1;
                     ip_addr = Some(
-                        field_chars
+                        field.chars()
                         .skip(ip_start)
-                        .take(ip_end - ip_start)
+                        .take(ip_end)
                         .collect()
                     );
                 }
