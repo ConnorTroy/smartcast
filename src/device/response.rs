@@ -2,21 +2,9 @@ use super::{Error, Result};
 
 use serde_json::Value;
 
-pub struct Response {
-
-}
-
-pub struct Info {
-}
-
-pub struct Status {
-    result: String,
-    detail: String,
-}
-
 pub fn process(res: String) -> Result<Option<Value>> {
+    // TO-DO: handle bad request xml
     let mut response: Value = serde_json::from_str(&res).unwrap();
-    // println!("{:#?}", response);
 
     let result: String =
         response["STATUS"]["RESULT"]
@@ -58,8 +46,13 @@ pub fn process(res: String) -> Result<Option<Value>> {
         },
     }
 
-    let item = response["ITEM"].take();
+    // TO-DO: do this better.
+    let item: Option<Value> = match (&response["ITEM"], &response["ITEMS"]) {
+        (Value::Null, Value::Null) => None,
+        (Value::Object(_), Value::Null) => Some(response["ITEM"].take()),
+        (Value::Null, Value::Array(_)) => Some(response["ITEMS"].take()),
+        _ => panic!("Unexpected json type")
+    };
 
-    println!("{:#?}", item);
-    Ok(Some(item))
+    Ok(item)
 }
