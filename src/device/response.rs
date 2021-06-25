@@ -56,3 +56,55 @@ pub fn process(res: String) -> Result<Option<Value>> {
 
     Ok(item)
 }
+
+#[derive(Debug, Clone)]
+pub struct Input {
+    name: String,
+    friendly_name: String,
+    hashval: u32
+}
+
+impl Input {
+    fn new(name: String, friendly_name: String, hashval: u32) -> Self {
+        Self {
+            name,
+            friendly_name,
+            hashval,
+        }
+    }
+
+    pub(crate) fn from_value(mut json_value: Value) -> Self {
+        let name: String            = "".to_string();
+        let friendly_name: String   = serde_json::from_value(json_value["VALUE"].take()).unwrap();
+        let hashval: u32            = serde_json::from_value(json_value["HASHVAL"].take()).unwrap();
+        Self::new(name, friendly_name, hashval)
+    }
+
+    pub(crate) fn from_array(json_value: Value) -> Vec<Self> {
+        let mut input_vec: Vec<Self> = Vec::new();
+        let value_vec: Vec<Value> = serde_json::from_value(json_value).unwrap();
+
+        for mut input_value in value_vec {
+            let name: String            = serde_json::from_value(input_value["NAME"].take()).unwrap();
+            let friendly_name: String   = serde_json::from_value(input_value["VALUE"]["NAME"].take()).unwrap();
+            let hashval: u32            = serde_json::from_value(input_value["HASHVAL"].take()).unwrap();
+
+            input_vec.push(Self::new(name, friendly_name, hashval));
+        }
+        input_vec
+    }
+
+    pub(crate) fn hashval(&self) -> u32 {
+        self.hashval
+    }
+
+    pub fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    pub fn friendly_name(&self) -> String {
+        self.friendly_name.clone()
+    }
+}
+
+

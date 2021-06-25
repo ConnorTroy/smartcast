@@ -1,5 +1,9 @@
 use serde::ser::{Serialize, Serializer, SerializeStruct};
 
+pub(crate) trait Endpoint {
+    fn endpoint(&self) -> String;
+}
+
 // #[allow(unused)]
 pub enum Command {
     StartPairing{client_name: String, client_id: String},
@@ -11,9 +15,9 @@ pub enum Command {
 
     GetCurrentInput,
     GetInputList,
-    ChangeInput,
+    ChangeInput{name: String, hashval: u32},
     LaunchApp,
-    ReadSettings,
+    ReadSettings(SettingsCategory),
     // WriteSettings, // To-do (Brick warning)
 }
 
@@ -23,10 +27,9 @@ pub enum RequestType {
     Put,
 }
 
-impl Command {
-
+impl Endpoint for Command {
     /// Get the endpoint of the command
-    pub fn endpoint(&self) -> String {
+    fn endpoint(&self) -> String {
         match self {
             Self::StartPairing{..}          => "/pairing/start",
             Self::FinishPairing{..}         => "/pairing/pair",
@@ -35,13 +38,15 @@ impl Command {
             Self::RemoteButtonPress{..}     => "/key_command/",
             Self::GetCurrentInput           => "/menu_native/dynamic/tv_settings/devices/current_input",
             Self::GetInputList              => "/menu_native/dynamic/tv_settings/devices/name_input",
-            Self::ChangeInput               => "/menu_native/dynamic/tv_settings/devices/current_input",
+            Self::ChangeInput{..}           => "/menu_native/dynamic/tv_settings/devices/current_input",
             Self::LaunchApp                 => "/app/launch",
-            Self::ReadSettings              => "/menu_native/dynamic/tv_settings/SETTINGS_CNAME",
+            Self::ReadSettings(settings)    => settings.endpoint().as_str(),
             // Self::WriteSettings             => "/menu_native/dynamic/tv_settings/SETTINGS_CNAME/ITEMS_CNAME",
-        }.to_string()
+        }.into()
     }
+}
 
+impl Command {
     /// Get the request type of the command
     pub fn request_type(&self) -> RequestType {
         match self {
@@ -49,13 +54,13 @@ impl Command {
             | Self::FinishPairing{..}
             | Self::CancelPairing{..}
             | Self::RemoteButtonPress{..}
-            | Self::ChangeInput
+            | Self::ChangeInput{..}
             | Self::LaunchApp       => RequestType::Put,
             // Self::WriteSettings     => RequestType::Put,
             Self::GetPowerState
             | Self::GetCurrentInput
             | Self::GetInputList
-            | Self::ReadSettings    => RequestType::Get,
+            | Self::ReadSettings(_) => RequestType::Get,
         }
     }
 }
@@ -86,13 +91,14 @@ impl Serialize for Command {
                 command.serialize_field("KEYLIST", button_event_vec)?;
                 command.end()
             },
+            Self::ChangeInput{name, hashval} => {
+                let mut command = serializer.serialize_struct("", 3)?;
+                command.serialize_field("REQUEST",  "MODIFY")?;
+                command.serialize_field("VALUE",    name)?;
+                command.serialize_field("HASHVAL",  hashval)?;
+                command.end()
+            },
             // TO-DO:
-            // Self::ChangeInput => {
-            //     let mut command = serializer.serialize_struct("", )?;
-            //     command.serialize_field("", )?;
-            //     command.serialize_field("", )?;
-            //     command.end()
-            // },
             // Self::LaunchApp => {
             //     let mut command = serializer.serialize_struct("", )?;
             //     command.serialize_field("", )?;
@@ -314,6 +320,81 @@ impl Button {
             Self::PowerOff => 0, //
             Self::PowerOn => 1, //
             Self::PowerToggle => 2, //
+        }
+    }
+}
+
+pub enum SettingsCategory {
+    Picture(PictureSettings),
+    Audio,
+    Timers,
+    Network,
+    Channels,
+    ClosedCaptions,
+    Devices,
+    System(SystemSettings),
+    MobileDevices,
+    Cast,
+}
+
+impl Endpoint for SettingsCategory {
+    fn endpoint(&self) -> String {
+        String::from("/menu_native/dynamic/tv_settings/") +
+        match self {
+            Self::Picture(pic) => pic.endpoint(),
+            Self::Audio => "audio",
+            Self::Timers => "timers",
+            Self::Network => "network",
+            Self::Channels => "channels",
+            Self::ClosedCaptions => "closed_captions",
+            Self::Devices => "devices",
+            Self::System(sys) => sys.endpoint().as_str(),
+            Self::MobileDevices => "mobile_devices",
+            Self::Cast => "cast",
+        }
+    }
+}
+
+pub enum PictureSettings {
+    Picture,
+    Size,
+    Position,
+    ColorCalibration,
+    ColorTuner,
+    CalibrationTests,
+}
+
+impl Endpoint for PictureSettings {
+    fn endpoint(&self) -> String {
+        String::from("picture") + match self {
+            Self::Picture => "",
+            Self::Size => "/picture_size",
+            Self::Position => "/picture_position",
+            Self::ColorCalibration => "/color_calibration",
+            Self::ColorTuner => "/color_calibration/color_tuner",
+            Self::CalibrationTests => "/color_calibration/calibration_tests",
+        }
+    }
+}
+
+pub enum SystemSettings {
+    System,
+    SystemInformation,
+    TvInformation,
+    TunerInformation,
+    NetworkInformation,
+    UliInformation,
+}
+
+impl Endpoint for SystemSettings {
+    fn endpoint(&self) -> String {
+        String::from("system") + match self {
+            Self::System => "",
+            Self::SystemInformation => "/system_information",
+            Self::TvInformation => "/system_information/tv_information",
+            Self::TunerInformation => "/system_information/tuner_information",
+            Self::NetworkInformation => "/system_information/network_information",
+            Self::UliInformation => "/system_information/uli_information",
         }
     }
 }

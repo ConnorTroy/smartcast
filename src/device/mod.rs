@@ -1,8 +1,9 @@
 mod command;
 mod response;
 
-use self::command::{Command, RequestType};
-pub use self::command::{ButtonEvent, Button};
+use self::command::{Command, RequestType, Endpoint};
+pub use self::command::{ButtonEvent, Button, SettingsCategory};
+pub use self::response::Input;
 
 use super::constant;
 // use super::discover;
@@ -16,9 +17,9 @@ use std::time::Duration;
 /// A Vizio Device
 #[derive(Debug, Clone)]
 pub struct Device {
-    friendly_name: String,
+    name: String,
     manufacturer: String,
-    model_name: String,
+    model: String,
     ip_addr: String,
     port: u16,
     uuid: String,
@@ -28,9 +29,9 @@ pub struct Device {
 
 impl Device {
     pub(crate) fn new(
-        friendly_name: String,
+        name: String,
         manufacturer: String,
-        model_name: String,
+        model: String,
         ip_addr: String,
         uuid: String
     ) -> Self {
@@ -42,10 +43,11 @@ impl Device {
             .build()
             .expect("Unable to build Reqwest Client");
         Self {
-            friendly_name,
+            name,
             manufacturer,
-            model_name,
+            model,
             ip_addr,
+            // TO-DO support port 8000
             port: 7345,
             uuid,
             auth_token: None,
@@ -53,14 +55,14 @@ impl Device {
         }
     }
 
-    /// Get device's model name
-    pub fn model_name(&self) -> String {
-        self.model_name.clone()
+    /// Get device's 'friendly' name
+    pub fn name(&self) -> String {
+        self.name.clone()
     }
 
-    /// Get device's 'friendly' name
-    pub fn friendly_name(&self) -> String {
-        self.friendly_name.clone()
+    /// Get device's model name
+    pub fn model_name(&self) -> String {
+        self.model.clone()
     }
 
     /// Get device's local IP
@@ -101,7 +103,6 @@ impl Device {
     /// will need to be passed into [`finish_pair()`](./struct.Device.html/#method.finish_pair)
     /// along with the pin displayed on the device screen.
     pub async fn begin_pair<S: Into<String>>(&self, client_name: S, client_id: S) -> Result<(u32, u32)> {
-
         let mut res = self.send_command(
             Command::StartPairing {
                 client_name: client_name.into(),
@@ -208,18 +209,47 @@ impl Device {
     }
 
     /// Get the current device input
-    pub async fn current_input(&self) -> Result<()> {
-        // TO-DO
-        let res = self.send_command(Command::GetCurrentInput).await?.unwrap();
-        println!("{}\n", res.to_string());
-        Ok(())
+    pub async fn current_input(&self) -> Result<Input> {
+        let mut res = self.send_command(Command::GetCurrentInput).await?.unwrap();
+        Ok(Input::from_value(res[0].take()))
     }
 
     /// Get list of available inputs
-    pub async fn list_inputs(&self) -> Result<()> {
-        // TO-DO
+    pub async fn list_inputs(&self) -> Result<Vec<Input>> {
         let res = self.send_command(Command::GetInputList).await?.unwrap();
-        println!("{:#?}\n", res);
+        Ok(Input::from_array(res))
+    }
+
+    /// Changes the input of the device
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// println!("{}", dev.current_input().await?.friendly_name());
+    /// // -> "Nintendo Switch"
+    ///
+    /// dev.change_input("HDMI-2").await?;
+    /// println!("{}", dev.current_input().await?.friendly_name());
+    /// // -> "Playstation 4"
+    /// ```
+    /// Note: the input's default name must be passed in, not the input's custom name -- e.g.
+    /// "HDMI-2" instead of "Playstation 4"
+    pub async fn change_input<S: Into<String>>(&self, name: S) -> Result<()> {
+        self.send_command(
+            Command::ChangeInput{
+                name: name.into(),
+                hashval: self.current_input().await?.hashval(),
+            }
+        ).await?;
+        Ok(())
+    }
+
+    /// TO-DO Document
+    pub async fn read_settings(&self, settings: SettingsCategory) -> Result<()> {
+        let res = self.send_command(Command::ReadSettings(settings)).await?.unwrap();
+
+        println!("{:#?}", res);
+
         Ok(())
     }
 

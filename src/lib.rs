@@ -7,7 +7,7 @@ use constant::*;
 
 pub use device::Device;
 pub use error::{Error, Result};
-pub use device::{ButtonEvent, Button};
+pub use device::{ButtonEvent, Button, Input, SettingsCategory};
 
 /// Discover Vizio devices on network
 ///
