@@ -16,6 +16,8 @@ pub fn process(res: String) -> Result<Option<Value>> {
 
     match result {
         "success" => {},
+        "invalid_parameter"             => Err(Error::InvalidParameter)?,
+        "uri_not_found"                 => Err(Error::UriNotFound)?,
         "max_challenges_exceeded"       => Err(Error::MaxChallengesExceeded)?,
         "pairing_denied"                => Err(Error::PairingDenied)?,
         "value_out_of_range"            => Err(Error::ValueOutOfRange)?,
@@ -51,7 +53,7 @@ pub fn process(res: String) -> Result<Option<Value>> {
         (Value::Null, Value::Null) => None,
         (Value::Object(_), Value::Null) => Some(response["ITEM"].take()),
         (Value::Null, Value::Array(_)) => Some(response["ITEMS"].take()),
-        _ => panic!("Unexpected json type")
+        _ => panic!("Unexpected response json")
     };
 
     Ok(item)
@@ -61,7 +63,7 @@ pub fn process(res: String) -> Result<Option<Value>> {
 pub struct Input {
     name: String,
     friendly_name: String,
-    hashval: u32
+    hashval: u32,
 }
 
 impl Input {
@@ -73,24 +75,31 @@ impl Input {
         }
     }
 
-    pub(crate) fn from_value(mut json_value: Value) -> Self {
-        let name: String            = "".to_string();
-        let friendly_name: String   = serde_json::from_value(json_value["VALUE"].take()).unwrap();
-        let hashval: u32            = serde_json::from_value(json_value["HASHVAL"].take()).unwrap();
+    pub(crate) fn from_value(input_value: &mut Value) -> Self {
+        // "NAME"
+        let name: String = serde_json::from_value(input_value["NAME"].take()).unwrap();
+
+        // "VALUE" is the friendly name for current input or object containing friendly for list of inputs
+        let friendly_name: String =
+            serde_json::from_value::<String>(input_value["VALUE"].clone())
+            .unwrap_or_else(|_|
+                serde_json::from_value::<String>(input_value["VALUE"]["NAME"].take()).unwrap()
+            );
+
+        // "HASHVAL"
+        let hashval: u32 = serde_json::from_value(input_value["HASHVAL"].take()).unwrap();
+
         Self::new(name, friendly_name, hashval)
     }
 
-    pub(crate) fn from_array(json_value: Value) -> Vec<Self> {
+    pub(crate) fn from_array(json_value: &mut Value) -> Vec<Self> {
         let mut input_vec: Vec<Self> = Vec::new();
-        let value_vec: Vec<Value> = serde_json::from_value(json_value).unwrap();
 
-        for mut input_value in value_vec {
-            let name: String            = serde_json::from_value(input_value["NAME"].take()).unwrap();
-            let friendly_name: String   = serde_json::from_value(input_value["VALUE"]["NAME"].take()).unwrap();
-            let hashval: u32            = serde_json::from_value(input_value["HASHVAL"].take()).unwrap();
-
-            input_vec.push(Self::new(name, friendly_name, hashval));
+        for input_value in json_value.as_array_mut().unwrap() {
+            let input = Self::from_value(input_value);
+            input_vec.push(input);
         }
+
         input_vec
     }
 
@@ -106,5 +115,3 @@ impl Input {
         self.friendly_name.clone()
     }
 }
-
-

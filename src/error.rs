@@ -4,6 +4,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Error for API calls from [`Device`](super::Device)
 #[derive(Debug)]
 pub enum Error {
+    /// Invalid Parameter - probably means this api needs to be modified to work with your firmware
+    InvalidParameter,
+    /// URI not found - probably means this api needs to be modified to work with your firmware
+    UriNotFound,
     /// Pairing: Too many failed pair attempts
     MaxChallengesExceeded,
     /// Pairing: Incorrect pin
@@ -85,6 +89,12 @@ impl From<std::string::String> for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            Error::InvalidParameter => {
+                write!(f, "Invalid Parameter - probably means this api needs to be modified to work with your firmware")
+            },
+            Error::UriNotFound => {
+                write!(f, "URI not found - probably means this api needs to be modified to work with your firmware")
+            },
             Error::MaxChallengesExceeded => {
                 write!(f, "Too many failed pair attempts")
             },
@@ -98,7 +108,7 @@ impl std::fmt::Display for Error {
                 write!(f, "Incorrect challenge")
             },
             Error::Blocked => {
-                write!(f, "Pairing is already in progress")
+                write!(f, "Command was blocked")
             },
             Error::Failure => {
                 write!(f, "Unknown command failure")

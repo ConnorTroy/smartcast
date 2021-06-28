@@ -1,9 +1,11 @@
 mod command;
 mod response;
+mod setting;
 
-use self::command::{Command, RequestType, Endpoint};
-pub use self::command::{ButtonEvent, Button, SettingsCategory};
+use self::command::{Command, RequestType};
+pub use self::command::{ButtonEvent, Button};
 pub use self::response::Input;
+pub use self::setting::{SubSetting, ObjectType, EndpointBase};
 
 use super::constant;
 // use super::discover;
@@ -13,17 +15,14 @@ use reqwest::Client;
 use serde_json::Value;
 
 use std::time::Duration;
+use std::rc::Rc;
+use std::sync::{Arc, RwLock};
+use std::cell::RefCell;
 
 /// A Vizio Device
 #[derive(Debug, Clone)]
 pub struct Device {
-    name: String,
-    manufacturer: String,
-    model: String,
-    ip_addr: String,
-    port: u16,
-    uuid: String,
-    auth_token: Option<String>,
+    info: Arc<RwLock<DeviceInfo>>,
     client: Client,
 }
 
@@ -43,53 +42,57 @@ impl Device {
             .build()
             .expect("Unable to build Reqwest Client");
         Self {
-            name,
-            manufacturer,
-            model,
-            ip_addr,
-            // TO-DO support port 8000
-            port: 7345,
-            uuid,
-            auth_token: None,
+            info: Arc::new(RwLock::new(
+                DeviceInfo::build(name, manufacturer, model, ip_addr, uuid)
+            )),
             client,
         }
     }
 
     /// Get device's 'friendly' name
     pub fn name(&self) -> String {
-        self.name.clone()
+        let info = self.info.read().unwrap();
+        info.name.clone()
     }
 
     /// Get device's model name
     pub fn model_name(&self) -> String {
-        self.model.clone()
+        let info = self.info.read().unwrap();
+        info.model.clone()
     }
 
     /// Get device's local IP
     pub fn ip(&self) -> String {
-        self.ip_addr.clone()
+        let info = self.info.read().unwrap();
+        info.ip_addr.clone()
     }
 
     /// Get device's port
     pub fn port(&self) -> u16 {
+        let info = self.info.read().unwrap();
         // TO-DO: Verify port (dependant on device firmware)
-        self.port
+        info.port
     }
 
     /// Get device's UUID
     pub fn uuid(&self) -> String {
-        self.uuid.clone()
+        let info = self.info.read().unwrap();
+        info.uuid.clone()
     }
 
     /// If set, get the client's auth token for the device
     pub fn auth_token(&self) -> Option<String> {
-        self.auth_token.clone()
+        let info = self.info.read().unwrap();
+        info.auth_token.clone()
     }
 
     /// If already paired, set client's auth token for the device.
     /// Returns an error if connection fails.
     pub fn set_auth_token(&mut self, token: String) -> Result<()> {
-        self.auth_token = Some(token);
+        self.info.
+        write().
+        unwrap()
+        .auth_token = Some(token);
         // TO-DO: Verify token
         Ok(())
     }
@@ -138,7 +141,7 @@ impl Device {
     /// let auth_token = dev.finish_pair(client_id, pairing_token, challenge, pin).await?;
     /// println!("{}", auth_token);
     /// ```
-    pub async fn finish_pair<S: Into<String>>(&mut self, client_id: S, pairing_token: u32, challenge: u32, pin: S) -> Result<String> {
+    pub async fn finish_pair<S: Into<String>>(&self, client_id: S, pairing_token: u32, challenge: u32, pin: S) -> Result<String> {
         // Strip non digits
         let pin: String = pin.into().chars().filter(|c| c.is_digit(10)).collect();
 
@@ -151,7 +154,10 @@ impl Device {
             }
         ).await?.unwrap();
         let auth_token: String = serde_json::from_value(res["AUTH_TOKEN"].take()).unwrap();
-        self.auth_token = Some(auth_token.clone());
+        self.info
+        .write()
+        .unwrap()
+        .auth_token = Some(auth_token.clone());
         Ok(auth_token)
     }
 
@@ -211,13 +217,13 @@ impl Device {
     /// Get the current device input
     pub async fn current_input(&self) -> Result<Input> {
         let mut res = self.send_command(Command::GetCurrentInput).await?.unwrap();
-        Ok(Input::from_value(res[0].take()))
+        Ok(Input::from_value(&mut res[0]))
     }
 
     /// Get list of available inputs
     pub async fn list_inputs(&self) -> Result<Vec<Input>> {
-        let res = self.send_command(Command::GetInputList).await?.unwrap();
-        Ok(Input::from_array(res))
+        let mut res = self.send_command(Command::GetInputList).await?.unwrap();
+        Ok(Input::from_array(&mut res))
     }
 
     /// Changes the input of the device
@@ -226,11 +232,11 @@ impl Device {
     ///
     /// ```
     /// println!("{}", dev.current_input().await?.friendly_name());
-    /// // -> "Nintendo Switch"
+    /// // > "Nintendo Switch"
     ///
     /// dev.change_input("HDMI-2").await?;
     /// println!("{}", dev.current_input().await?.friendly_name());
-    /// // -> "Playstation 4"
+    /// // > "Playstation 4"
     /// ```
     /// Note: the input's default name must be passed in, not the input's custom name -- e.g.
     /// "HDMI-2" instead of "Playstation 4"
@@ -245,27 +251,94 @@ impl Device {
     }
 
     /// TO-DO Document
-    pub async fn read_settings(&self, settings: SettingsCategory) -> Result<()> {
-        let res = self.send_command(Command::ReadSettings(settings)).await?.unwrap();
+    pub async fn read_settings(&self, subsetting: SubSetting) -> Result<Vec<SubSetting>> {
 
-        println!("{:#?}", res);
+        if subsetting.hidden()
+            || subsetting.endpoint(EndpointBase::NoBase) == "channels/parental_controls"
+            || subsetting.object_type() != ObjectType::Menu {
+            return Ok(Vec::new());
+            // Err(Error::Blocked)?;
+        }
 
-        Ok(())
+        let res = self.send_command(Command::ReadSettings(subsetting.clone())).await?.unwrap();
+
+        let mut settings_res: Vec<SubSetting> = match serde_json::from_value(res.clone()) {
+            Ok(s) => s,
+            Err(e) => {
+                println!("{:#?}\n\n{}", res, e);
+                panic!();
+            }
+        };
+
+        let parent_endpoint = subsetting.endpoint(EndpointBase::NoBase);
+        for setting in settings_res.iter_mut() {
+            setting.add_parent_endpoint(parent_endpoint.clone());
+
+            if setting.hidden()
+                || setting.endpoint(EndpointBase::NoBase) == "channels/parental_controls" {
+                    continue;
+            }
+
+            match setting.object_type() {
+                ObjectType::Slider => {
+                    let static_setting = self.send_command(Command::ReadStaticSettings(setting.clone())).await?.unwrap();
+                    let slider_info: setting::SliderInfo = match serde_json::from_value(static_setting[0].clone()) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            println!("{}", setting.endpoint(EndpointBase::NoBase));
+                            println!("{:#?}\n\n{}", static_setting[0], e);
+                            panic!();
+                        }
+                    };
+                    setting.add_slider_info(slider_info);
+                },
+                ObjectType::List
+                | ObjectType::XList => {
+                    if setting.elements().is_none() {
+                        let static_setting = self.send_command(Command::ReadStaticSettings(setting.clone())).await?.unwrap();
+                        let elements: Vec<String> = match serde_json::from_value(static_setting[0]["ELEMENTS"].clone()) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                println!("{}", setting.endpoint(EndpointBase::NoBase));
+                                println!("{:#?}\n\n{}", static_setting[0], e);
+                                panic!();
+                            }
+                        };
+                        setting.add_elements(elements);
+                    }
+                }
+                _ => {},
+            }
+
+
+            // setting.connect_device(self.clone());
+        }
+
+//         println!(
+//             "=====================================================================\n
+// {:#?}\n
+// =====================================================================", settings_res);
+        match settings_res.len() {
+            1 => Ok(Vec::new()),
+            _ => Ok(settings_res)
+        }
     }
 
     async fn send_command(&self, command: Command) -> Result<Option<Value>> {
+        let device_info = self.info.read().unwrap();
 
         // Start building request
         let mut req = match command.request_type() {
             RequestType::Get => {
+                // println!("https://{}:{}{}", device_info.ip_addr, device_info.port, command.endpoint());
                 self.client.get(
-                    format!("https://{}:{}{}", self.ip_addr, self.port, command.endpoint())
+                    format!("https://{}:{}{}", device_info.ip_addr, device_info.port, command.endpoint())
                 )
             },
             RequestType::Put => {
                 println!("Body:{}\n", serde_json::to_string(&command).unwrap());
                 self.client.put(
-                    format!("https://{}:{}{}", self.ip_addr, self.port, command.endpoint())
+                    format!("https://{}:{}{}", device_info.ip_addr, device_info.port, command.endpoint())
                 )
                 // Add body for PUT commands
                 .body(
@@ -278,7 +351,7 @@ impl Device {
         req = req.header("Content-Type", "application/json");
 
         // If paired, add auth token header
-        match &self.auth_token {
+        match &device_info.auth_token {
             Some(token) => {
                 req = req.header("Auth", token);
             },
@@ -290,5 +363,31 @@ impl Device {
 
         // Process response
         response::process(res.text().await?)
+    }
+}
+
+#[derive(Debug)]
+struct DeviceInfo {
+    name: String,
+    manufacturer: String,
+    model: String,
+    ip_addr: String,
+    port: u16,
+    uuid: String,
+    auth_token: Option<String>
+}
+
+impl DeviceInfo {
+    fn build(name: String,manufacturer: String,model: String,ip_addr: String,uuid: String) -> Self {
+        Self {
+            name,
+            manufacturer,
+            model,
+            ip_addr,
+            // TO-DO support port 8000
+            port: 7345,
+            uuid,
+            auth_token: None,
+        }
     }
 }
