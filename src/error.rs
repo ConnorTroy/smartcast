@@ -52,13 +52,13 @@ pub enum Error {
     NetIPDHCPFailed,
     /// Unknown Network Error
     NetUnknown,
+    #[doc(hidden)]
     /// Error from http client
     Reqwest(reqwest::Error),
     /// Error from std::io
     StdIO(std::io::Error),
-    #[doc(hidden)]
     /// Error processing json command
-    // Json(serde_json::Error),
+    Json(serde_json::Error),
     Other(String),
 }
 
@@ -68,11 +68,11 @@ impl From<reqwest::Error> for Error {
     }
 }
 
-// impl From<serde_json::Error> for Error {
-//     fn from(e: serde_json::Error) -> Error {
-//         Error::Json(e)
-//     }
-// }
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Error {
+        Error::Json(e)
+    }
+}
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Error {
@@ -161,7 +161,7 @@ impl std::fmt::Display for Error {
             Error::NetUnknown => {
                 write!(f, "Unknown Network Error")
             },
-            Error::Reqwest(_)// | Error::Json(_)
+            Error::Reqwest(_) | Error::Json(_)
             | Error::StdIO(_) | Error::Other(_)=> {
                 write!(f, "{}", self)
             }
