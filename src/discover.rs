@@ -1,16 +1,19 @@
 use super::{Device, Result};
-use super::constant::DEFAULT_TIMEOUT;
 
 use regex::Regex;
-
-use std::net::UdpSocket;
-use std::time::Duration;
+use tokio::{
+    net::UdpSocket,
+    time::{timeout, Duration},
+};
+use std::net::SocketAddr;
 use std::str;
 
-async fn uaudp_followup(ssdp_response: &[u8; 1024]) -> Result<Option<Device>> {
+// use std::thread;
+
+async fn uaudp_followup(ssdp_response: &[u8]) -> Result<Option<Device>> {
     // Parse headers for xml url
     let mut headers = [httparse::EMPTY_HEADER; 16];
-    let mut res= httparse::Response::new(&mut headers);
+    let mut res = httparse::Response::new(&mut headers);
 
     res.parse(ssdp_response).unwrap();
 
@@ -95,35 +98,41 @@ async fn uaudp_followup(ssdp_response: &[u8; 1024]) -> Result<Option<Device>> {
 }
 
 // Returns a vector of Vizio Devices
-pub(crate) async fn ssdp(host: &str, service: &str, max: u8) -> Result<Vec<Device>> {
+pub(crate) async fn ssdp(host: &str, urn: &str, max_time: u8) -> Result<Vec<Device>> {
+
     let body: &str =
         &[
             "M-SEARCH * HTTP/1.1",
             &format!("HOST: {}", host),
             "MAN: \"ssdp:discover\"",
-            &format!("ST: {}", service),
-            &format!("MX: {}", max),
+            &format!("ST: {}", urn),
+            &format!("MX: {}", max_time),
             "",
             ""
         ].join("\r\n");
 
     // Open UDP Socket
-    // TO-DO: get local ip
-    // TO-DO: backup ports
-    let socket = UdpSocket::bind("192.168.0.8:32000")?;
-    socket.set_read_timeout(Some(Duration::from_secs(DEFAULT_TIMEOUT)))?;
+    let socket = UdpSocket::bind({
+        // "Connect" to a local ip to get local address
+        let temp_socket = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], 0))).await?;
+        temp_socket.connect(SocketAddr::from(([192, 168, 0, 1], 0))).await?;
+        temp_socket.local_addr()?
+    }).await?;
 
     // Send ssdp request
-    socket.send_to(body.as_bytes(), host)?;
+    socket.send_to(body.as_bytes(), host).await?;
     let mut rbuf = [0; 1024];
 
     // Get responses from devices
     let mut devices: Vec<Device> = Vec::new();
-    while let Ok(_) = socket.recv(&mut rbuf) {
+    while let Ok(Ok(len)) = timeout(Duration::from_secs(max_time as u64), socket.recv(&mut rbuf)).await {
+        println!("{}", str::from_utf8(&rbuf).unwrap());
         match uaudp_followup(&rbuf).await? {
             Some(device) => devices.push(device),
             _ => {},
         }
+        // Clear rbuf
+        for b in rbuf[..len].iter_mut() { *b = 0 }
     }
 
     Ok(devices)
