@@ -1,4 +1,4 @@
-use super::{SubSetting, EndpointBase};
+use super::{SubSetting, UrlBase};
 
 use serde::ser::{Serialize, Serializer, SerializeStruct};
 
@@ -21,7 +21,6 @@ pub enum Command {
     // WriteSettings, // To-do (Brick warning)
 }
 
-#[derive(Debug)]
 pub enum RequestType {
     Get,
     Put,
@@ -40,8 +39,8 @@ impl Command {
             Self::GetInputList                      => "/menu_native/dynamic/tv_settings/devices/name_input".into(),
             Self::ChangeInput{..}                   => "/menu_native/dynamic/tv_settings/devices/current_input".into(),
             Self::LaunchApp                         => "/app/launch".into(),
-            Self::ReadSettings(subsetting)          => subsetting.endpoint(EndpointBase::Dynamic), //settings.endpoint(),
-            Self::ReadStaticSettings(subsetting)    => subsetting.endpoint(EndpointBase::Static), //settings.endpoint(),
+            Self::ReadSettings(subsetting)          => subsetting.endpoint(UrlBase::Dynamic), //settings.endpoint(),
+            Self::ReadStaticSettings(subsetting)    => subsetting.endpoint(UrlBase::Static), //settings.endpoint(),
             // Self::WriteSettings             => "/menu_native/dynamic/tv_settings/SETTINGS_CNAME/ITEMS_CNAME",
         }
     }
@@ -118,7 +117,7 @@ impl Serialize for Command {
 
 /// Button interactions used in [`button_event()`](./struct.Device.html/#method.button_event)
 ///
-/// Must include a [`Button`] to specify what you want ot interact with
+/// Must include a [`Button`] to specify what you want to interact with
 pub enum ButtonEvent {
     /// Hold the button down
     KeyDown(Button),

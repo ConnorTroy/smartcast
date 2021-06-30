@@ -1,26 +1,33 @@
-use super::Command;
+use super::Result;
+use super::Error;
 
 // use serde::de;
 // use serde::de::{Deserialize, Deserializer, Visitor, MapAccess};
 use serde_json::Value;
 use serde::{de, Deserialize};
 
+use std::result::Result as StdResult;
 // use std::fmt;
 
 const STATIC_BASE: &str = "/menu_native/static/tv_settings/";
 const DYNAMIC_BASE: &str = "/menu_native/dynamic/tv_settings/";
-pub enum EndpointBase {
-    Dynamic,
-    Static,
-    NoBase,
+
+pub trait SettingValue<T> {
+    fn value(&self) -> Result<T>;
 }
 
-impl EndpointBase {
+pub enum UrlBase {
+    Dynamic,
+    Static,
+    None,
+}
+
+impl UrlBase {
     fn base(&self) -> String {
         match self {
             Self::Static => STATIC_BASE,
             Self::Dynamic => DYNAMIC_BASE,
-            Self::NoBase => "",
+            Self::None => "",
         }.to_string()
     }
 }
@@ -37,7 +44,7 @@ pub enum ObjectType {
 
 /// Deserializer for [`ObjectType`]
 impl<'de> Deserialize<'de> for ObjectType {
-    fn deserialize<D>(deserializer: D) -> Result<ObjectType, D::Error>
+    fn deserialize<D>(deserializer: D) -> StdResult<ObjectType, D::Error>
     where
         D: de::Deserializer<'de>,
     {
@@ -109,7 +116,7 @@ impl SubSetting {
         self.elements.clone()
     }
 
-    pub(crate) fn endpoint(&self, endpoint_base: EndpointBase) -> String {
+    pub(crate) fn endpoint(&self, endpoint_base: UrlBase) -> String {
         endpoint_base.base() + &self.endpoint
     }
 
@@ -128,23 +135,41 @@ impl SubSetting {
     }
 }
 
-impl Default for SubSetting {
-    fn default() -> Self {
-        Self {
-            endpoint:   "".into(),
-            hashval:    None,
-            hidden:     false,
-            name:       "TV Settings".into(),
-            readonly:   false,
-            object_type: ObjectType::Menu,
-            value:      None,
-            slider_info: None,
-            elements:   None,
+impl SettingValue<String> for SubSetting {
+    fn value(&self) -> Result<String> {
+        match &self.value {
+            Some(value) => Ok(serde_json::from_value(value.clone())?),
+            None => Err(Error::Other("Value is None".into())),
         }
     }
 }
 
-fn string_to_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
+impl SettingValue<Value> for SubSetting {
+    fn value(&self) -> Result<Value> {
+        match &self.value {
+            Some(value) => Ok(value.clone()),
+            None => Err(Error::Other("Value is None".into())),
+        }
+    }
+}
+
+impl Default for SubSetting {
+    fn default() -> Self {
+        Self {
+            endpoint:       "".into(),
+            hashval:        None,
+            hidden:         false,
+            name:           "TV Settings".into(),
+            readonly:       false,
+            object_type:    ObjectType::Menu,
+            value:          None,
+            slider_info:    None,
+            elements:       None,
+        }
+    }
+}
+
+fn string_to_bool<'de, D>(deserializer: D) -> StdResult<bool, D::Error>
 where
     D: de::Deserializer<'de>,
 {

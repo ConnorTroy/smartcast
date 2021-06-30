@@ -5,94 +5,110 @@ mod setting;
 use self::command::{Command, RequestType};
 pub use self::command::{ButtonEvent, Button};
 pub use self::response::Input;
-pub use self::setting::{SubSetting, ObjectType, EndpointBase};
+pub use self::setting::{SubSetting, ObjectType, UrlBase};
 
 use super::constant;
 // use super::discover;
 use super::error::{Error, Result};
 
 use reqwest::Client;
+use reqwest::header::HeaderMap;
 use serde_json::Value;
 
-use std::time::Duration;
-use std::rc::Rc;
-use std::sync::{Arc, RwLock};
-use std::cell::RefCell;
+use std::time::{Duration, Instant};
+// use std::rc::Rc;
+// use std::sync::{Arc, RwLock};
+// use std::cell::RefCell;
 
 /// A Vizio Device
 #[derive(Debug, Clone)]
 pub struct Device {
-    info: Arc<RwLock<DeviceInfo>>,
+    name: String,
+    manufacturer: String,
+    model: String,
+    ip_addr: String,
+    port: u16,
+    uuid: String,
+    auth_token: Option<String>,
+    // info: Arc<RwLock<DeviceInfo>>,
     client: Client,
 }
 
 impl Device {
-    pub(crate) fn new(
-        name: String,
-        manufacturer: String,
-        model: String,
-        ip_addr: String,
-        uuid: String
-    ) -> Self {
-        let client =
-            reqwest::Client::builder()
-            .timeout(Duration::from_secs(constant::DEFAULT_TIMEOUT))
-            .https_only(true)
-            .danger_accept_invalid_certs(true)
-            .build()
-            .expect("Unable to build Reqwest Client");
-        Self {
-            info: Arc::new(RwLock::new(
-                DeviceInfo::build(name, manufacturer, model, ip_addr, uuid)
-            )),
-            client,
+    pub(crate) fn new<S: Into<String>>(
+        name: S,
+        manufacturer: S,
+        model: S,
+        ip_addr: S,
+        uuid: S
+    ) -> Device {
+        Device {
+            name: name.into(),
+            manufacturer: manufacturer.into(),
+            model: model.into(),
+            ip_addr: ip_addr.into(),
+            port: 7345,
+            uuid: uuid.into(),
+            auth_token: None,
+            // info: Arc::new(RwLock::new(
+            //     DeviceInfo::build(name, manufacturer, model, ip_addr, uuid)
+            // )),
+            client: Self::new_client(),
         }
     }
 
+    // pub fn from_ip<S: Into<String>>(ip_addr: &str) -> Self {
+    //     let client = Self::new_client();
+
+    // }
+
+    fn new_client() -> Client {
+        let mut headers = HeaderMap::new();
+        headers.insert("Content-Type", "application/json".parse().unwrap());
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(constant::DEFAULT_TIMEOUT))
+            .https_only(true)
+            .danger_accept_invalid_certs(true)
+            .default_headers(headers)
+            .build()
+            .expect("Unable to build Reqwest Client")
+    }
+
     /// Get device's 'friendly' name
-    pub fn name(&self) -> String {
-        let info = self.info.read().unwrap();
-        info.name.clone()
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Get device's model name
-    pub fn model_name(&self) -> String {
-        let info = self.info.read().unwrap();
-        info.model.clone()
+    pub fn model_name(&self) -> &str {
+        &self.model
     }
 
     /// Get device's local IP
-    pub fn ip(&self) -> String {
-        let info = self.info.read().unwrap();
-        info.ip_addr.clone()
+    pub fn ip(&self) -> &str {
+        &self.ip_addr
     }
 
     /// Get device's port
     pub fn port(&self) -> u16 {
-        let info = self.info.read().unwrap();
         // TO-DO: Verify port (dependant on device firmware)
-        info.port
+        self.port
     }
 
     /// Get device's UUID
-    pub fn uuid(&self) -> String {
-        let info = self.info.read().unwrap();
-        info.uuid.clone()
+    pub fn uuid(&self) -> &str {
+        &self.uuid
     }
 
     /// If set, get the client's auth token for the device
     pub fn auth_token(&self) -> Option<String> {
-        let info = self.info.read().unwrap();
-        info.auth_token.clone()
+        self.auth_token.clone()
     }
 
     /// If already paired, set client's auth token for the device.
     /// Returns an error if connection fails.
-    pub fn set_auth_token(&mut self, token: String) -> Result<()> {
-        self.info.
-        write().
-        unwrap()
-        .auth_token = Some(token);
+    pub fn set_auth_token<S: Into<String>>(&mut self, token: S) -> Result<()> {
+        self.auth_token = Some(token.into());
         // TO-DO: Verify token
         Ok(())
     }
@@ -141,7 +157,7 @@ impl Device {
     /// let auth_token = dev.finish_pair(client_id, pairing_token, challenge, pin).await?;
     /// println!("{}", auth_token);
     /// ```
-    pub async fn finish_pair<S: Into<String>>(&self, client_id: S, pairing_token: u32, challenge: u32, pin: S) -> Result<String> {
+    pub async fn finish_pair<S: Into<String>>(&mut self, client_id: S, pairing_token: u32, challenge: u32, pin: S) -> Result<String> {
         // Strip non digits
         let pin: String = pin.into().chars().filter(|c| c.is_digit(10)).collect();
 
@@ -153,11 +169,10 @@ impl Device {
                 response_value: pin,
             }
         ).await?.unwrap();
+
         let auth_token: String = serde_json::from_value(res["AUTH_TOKEN"].take()).unwrap();
-        self.info
-        .write()
-        .unwrap()
-        .auth_token = Some(auth_token.clone());
+
+        self.auth_token = Some(auth_token.clone());
         Ok(auth_token)
     }
 
@@ -253,93 +268,57 @@ impl Device {
     /// TO-DO Document
     pub async fn read_settings(&self, subsetting: SubSetting) -> Result<Vec<SubSetting>> {
 
-        if subsetting.hidden()
-            || subsetting.endpoint(EndpointBase::NoBase) == "channels/parental_controls"
-            || subsetting.object_type() != ObjectType::Menu {
-            return Ok(Vec::new());
-            // Err(Error::Blocked)?;
+        if subsetting.hidden() {
+            return Err(Error::Blocked);
+        } else if subsetting.object_type() != ObjectType::Menu {
+            return Ok(vec![subsetting]);
         }
 
         let res = self.send_command(Command::ReadSettings(subsetting.clone())).await?.unwrap();
 
-        let mut settings_res: Vec<SubSetting> = match serde_json::from_value(res.clone()) {
-            Ok(s) => s,
-            Err(e) => {
-                println!("{:#?}\n\n{}", res, e);
-                panic!();
-            }
-        };
+        let mut settings_res: Vec<SubSetting> = serde_json::from_value(res)?;
 
-        let parent_endpoint = subsetting.endpoint(EndpointBase::NoBase);
+        let parent_endpoint = subsetting.endpoint(UrlBase::None);
         for setting in settings_res.iter_mut() {
             setting.add_parent_endpoint(parent_endpoint.clone());
 
-            if setting.hidden()
-                || setting.endpoint(EndpointBase::NoBase) == "channels/parental_controls" {
-                    continue;
+            if setting.hidden() {
+                continue;
             }
 
             match setting.object_type() {
                 ObjectType::Slider => {
-                    let static_setting = self.send_command(Command::ReadStaticSettings(setting.clone())).await?.unwrap();
-                    let slider_info: setting::SliderInfo = match serde_json::from_value(static_setting[0].clone()) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            println!("{}", setting.endpoint(EndpointBase::NoBase));
-                            println!("{:#?}\n\n{}", static_setting[0], e);
-                            panic!();
-                        }
-                    };
-                    setting.add_slider_info(slider_info);
+                    if setting.slider_info().is_none() {
+                        let static_setting = self.send_command(Command::ReadStaticSettings(setting.clone())).await?.unwrap();
+                        let slider_info: setting::SliderInfo = serde_json::from_value(static_setting[0].clone())?;
+                        setting.add_slider_info(slider_info);
+                    }
                 },
                 ObjectType::List
                 | ObjectType::XList => {
                     if setting.elements().is_none() {
                         let static_setting = self.send_command(Command::ReadStaticSettings(setting.clone())).await?.unwrap();
-                        let elements: Vec<String> = match serde_json::from_value(static_setting[0]["ELEMENTS"].clone()) {
-                            Ok(s) => s,
-                            Err(e) => {
-                                println!("{}", setting.endpoint(EndpointBase::NoBase));
-                                println!("{:#?}\n\n{}", static_setting[0], e);
-                                panic!();
-                            }
-                        };
+                        let elements: Vec<String> = serde_json::from_value(static_setting[0]["ELEMENTS"].clone())?;
                         setting.add_elements(elements);
                     }
                 }
                 _ => {},
             }
-
-
-            // setting.connect_device(self.clone());
         }
 
-//         println!(
-//             "=====================================================================\n
-// {:#?}\n
-// =====================================================================", settings_res);
-        match settings_res.len() {
-            1 => Ok(Vec::new()),
-            _ => Ok(settings_res)
-        }
+        Ok(settings_res)
     }
 
     async fn send_command(&self, command: Command) -> Result<Option<Value>> {
-        let device_info = self.info.read().unwrap();
+        let url: String = format!("https://{}:{}{}", self.ip_addr, self.port, command.endpoint());
 
         // Start building request
         let mut req = match command.request_type() {
             RequestType::Get => {
-                // println!("https://{}:{}{}", device_info.ip_addr, device_info.port, command.endpoint());
-                self.client.get(
-                    format!("https://{}:{}{}", device_info.ip_addr, device_info.port, command.endpoint())
-                )
+                self.client.get(url)
             },
             RequestType::Put => {
-                println!("Body:{}\n", serde_json::to_string(&command).unwrap());
-                self.client.put(
-                    format!("https://{}:{}{}", device_info.ip_addr, device_info.port, command.endpoint())
-                )
+                self.client.put(url)
                 // Add body for PUT commands
                 .body(
                     serde_json::to_string(&command).unwrap()
@@ -347,13 +326,13 @@ impl Device {
             },
         };
 
-        // Add content type header
-        req = req.header("Content-Type", "application/json");
+        // // Add content type header
+        // req = req.header("Content-Type", "application/json");
 
         // If paired, add auth token header
-        match &device_info.auth_token {
+        match &self.auth_token {
             Some(token) => {
-                req = req.header("Auth", token);
+                req = req.header("Auth", token.to_string());
             },
             None => {},
         }
@@ -362,7 +341,7 @@ impl Device {
         let res = req.send().await?;
 
         // Process response
-        response::process(res.text().await?)
+        response::process(res.json().await?)
     }
 }
 

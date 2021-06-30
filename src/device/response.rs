@@ -2,9 +2,8 @@ use super::{Error, Result};
 
 use serde_json::Value;
 
-pub fn process(res: String) -> Result<Option<Value>> {
+pub fn process(mut response: Value) -> Result<Option<Value>> {
     // TO-DO: handle bad request xml
-    let mut response: Value = serde_json::from_str(&res).unwrap();
 
     let result: String =
         response["STATUS"]["RESULT"]
