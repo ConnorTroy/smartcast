@@ -13,12 +13,9 @@ pub use device::{ButtonEvent, Button, Input, SubSetting, ObjectType};
 ///
 /// This function uses SSDP to find Vizio devices
 /// connected to the local network. It will return a vector of
-/// [`Device`](Device)s
+/// [`Device`]s
 pub async fn discover_devices() -> Result<Vec<Device>> {
-    Ok(discover::ssdp(
-            DEFAULT_SSDP_IP,
-            DEFAULT_SSDP_SERVICE,
-            DEFAULT_SSDP_MAXTIME
-        ).await?
+    Ok(
+        discover::ssdp( SSDP_IP, SSDP_URN, DEFAULT_SSDP_MAXTIME).await?
     )
 }
