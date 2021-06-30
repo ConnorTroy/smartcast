@@ -8,8 +8,6 @@ use tokio::{
 use std::net::SocketAddr;
 use std::str;
 
-// use std::thread;
-
 async fn uaudp_followup(ssdp_response: &[u8]) -> Result<Option<Device>> {
     // Parse headers for xml url
     let mut headers = [httparse::EMPTY_HEADER; 16];
@@ -126,7 +124,6 @@ pub(crate) async fn ssdp(host: &str, urn: &str, max_time: u8) -> Result<Vec<Devi
     // Get responses from devices
     let mut devices: Vec<Device> = Vec::new();
     while let Ok(Ok(len)) = timeout(Duration::from_secs(max_time as u64), socket.recv(&mut rbuf)).await {
-        println!("{}", str::from_utf8(&rbuf).unwrap());
         match uaudp_followup(&rbuf).await? {
             Some(device) => devices.push(device),
             _ => {},
