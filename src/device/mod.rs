@@ -84,6 +84,10 @@ impl Device {
         &self.model
     }
 
+    pub fn manufacturer(&self) -> &str {
+        &self.manufacturer
+    }
+
     /// Get device's local IP
     pub fn ip(&self) -> &str {
         &self.ip_addr
@@ -368,5 +372,18 @@ impl DeviceInfo {
             uuid,
             auth_token: None,
         }
+    }
+}
+
+#[cfg(test)]
+impl PartialEq for Device {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+        && self.manufacturer == other.manufacturer
+        && self.model == other.model
+        && self.ip_addr == other.ip_addr
+        && self.port == other.port
+        && self.uuid == other.uuid
+        && self.auth_token == other.auth_token
     }
 }
