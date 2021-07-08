@@ -39,8 +39,8 @@ impl Command {
             Self::GetInputList                      => "/menu_native/dynamic/tv_settings/devices/name_input".into(),
             Self::ChangeInput{..}                   => "/menu_native/dynamic/tv_settings/devices/current_input".into(),
             Self::LaunchApp                         => "/app/launch".into(),
-            Self::ReadSettings(subsetting)          => subsetting.endpoint(UrlBase::Dynamic), //settings.endpoint(),
-            Self::ReadStaticSettings(subsetting)    => subsetting.endpoint(UrlBase::Static), //settings.endpoint(),
+            Self::ReadSettings(subsetting)          => subsetting.endpoint(UrlBase::Dynamic),
+            Self::ReadStaticSettings(subsetting)    => subsetting.endpoint(UrlBase::Static), 
             // Self::WriteSettings             => "/menu_native/dynamic/tv_settings/SETTINGS_CNAME/ITEMS_CNAME",
         }
     }

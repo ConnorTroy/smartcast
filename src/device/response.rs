@@ -3,6 +3,7 @@ use super::{Error, Result};
 use serde_json::Value;
 
 pub fn process(mut response: Value) -> Result<Option<Value>> {
+    // println!("{:#?}", response);
     // TO-DO: handle bad request xml
 
     let result: String =

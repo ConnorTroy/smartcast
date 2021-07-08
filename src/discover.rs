@@ -8,23 +8,7 @@ use tokio::{
 use std::net::SocketAddr;
 use std::str;
 
-async fn uaudp_followup(ssdp_response: &[u8]) -> Result<Option<Device>> {
-    // Parse headers for xml url
-    let mut headers = [httparse::EMPTY_HEADER; 16];
-    let mut res = httparse::Response::new(&mut headers);
-
-    res.parse(ssdp_response).unwrap();
-
-    let location =
-        str::from_utf8(
-            match
-            headers.iter()
-            .find(|x| x.name.to_lowercase() == "location") {
-                Some(header) => header.value,
-                None => return Ok(None)
-            }
-        ).unwrap();
-
+pub(super) async fn uaudp_followup(location: &str) -> Result<Option<Device>> {
     // Get device description xml
     let res =
         reqwest::get(location).await?
@@ -122,7 +106,23 @@ pub(super) async fn ssdp(host: &str, urn: &str, max_time: u8) -> Result<Vec<Devi
     // Get responses from devices
     let mut devices: Vec<Device> = Vec::new();
     while let Ok(Ok(len)) = timeout(Duration::from_secs(max_time as u64), socket.recv(&mut rbuf)).await {
-        match uaudp_followup(&rbuf).await? {
+        // Parse headers for xml url
+        let mut headers = [httparse::EMPTY_HEADER; 16];
+        let mut res = httparse::Response::new(&mut headers);
+
+        res.parse(&rbuf).unwrap();
+
+        let location =
+            str::from_utf8(
+                match
+                headers.iter()
+                .find(|x| x.name.to_lowercase() == "location") {
+                    Some(header) => header.value,
+                    None => continue,
+                }
+            ).unwrap();
+
+        match uaudp_followup(location).await? {
             Some(device) => devices.push(device),
             _ => {},
         }
@@ -148,7 +148,6 @@ mod tests {
     use rand::{distributions::Alphanumeric, Rng};
 
     use std::{io, net::SocketAddr};
-    use std::str;
 
     macro_rules! device_desc {
         ($ip:expr, $port:expr, $name:expr, $manufacturer:expr, $model:expr, $uuid:expr) => {
@@ -185,9 +184,6 @@ mod tests {
 
         let mut rbuf = [0; 1024];
         while let Ok((len, recv_addr)) = ssdp_socket.recv_from(&mut rbuf).await {
-            // TODO: Parse Packet
-            // println!("{}\n\n{}", str::from_utf8(&rbuf).unwrap(), recv_addr);
-
             // Send API address to emulated device for ssdp
             tx.send(Some(recv_addr)).unwrap();
 
@@ -224,7 +220,8 @@ mod tests {
                 &rand_string[8..12],
                 &rand_string[12..16],
                 &rand_string[16..20],
-                &rand_string[20..32]),
+                &rand_string[20..32]
+            ),
         );
 
         // Return Device to be expected by main test
@@ -255,6 +252,7 @@ mod tests {
                 ].join("\r\n");
 
                 while let Ok((stream, _)) = desc_server.accept().await {
+                    // TO-DO: Verify Endpoint
                     loop {
                         stream.writable().await.unwrap();
                         match stream.try_write(body.as_bytes()) {
@@ -266,7 +264,6 @@ mod tests {
                                     panic!("{}", e);
                                 }
                             }
-
                         }
                     }
                 }
@@ -299,7 +296,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ssdp_single_device() {
+    async fn ssdp_single_device() {
 
         let (address_tx, address_rx) = oneshot::channel::<SocketAddr>();
         let (device_tx, device_rx) = oneshot::channel::<Device>();
@@ -323,7 +320,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ssdp_multi_device() {
+    async fn ssdp_multi_device() {
 
         // Start SSDP
         let (address_tx, address_rx) = oneshot::channel::<SocketAddr>();
@@ -354,13 +351,13 @@ mod tests {
 
         assert_eq!(devices.len(), 10);
 
-        devices.sort_by(|a, b| a.name().partial_cmp(b.name()).unwrap());
-        expected_devices.sort_by(|a, b| a.name().partial_cmp(b.name()).unwrap());
+        devices.sort_by(|a, b| a.name().partial_cmp(&b.name()).unwrap());
+        expected_devices.sort_by(|a, b| a.name().partial_cmp(&b.name()).unwrap());
         assert_eq!(devices, expected_devices);
     }
 
     #[tokio::test]
-    async fn test_ssdp_no_device() {
+    async fn ssdp_no_device() {
 
         let (address_tx, address_rx) = oneshot::channel::<SocketAddr>();
         let (tx, rx) = watch::channel::<Option<SocketAddr>>(None);
