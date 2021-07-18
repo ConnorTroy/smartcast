@@ -122,9 +122,8 @@ pub(super) async fn ssdp(host: &str, urn: &str, max_time: u8) -> Result<Vec<Devi
                 }
             ).unwrap();
 
-        match uaudp_followup(location).await? {
-            Some(device) => devices.push(device),
-            _ => {},
+        if let Some(device) = uaudp_followup(location).await? {
+            devices.push(device);
         }
         // Clear rbuf
         for b in rbuf[..len].iter_mut() { *b = 0 }

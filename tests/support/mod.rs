@@ -92,7 +92,7 @@ impl VizioDevice {
         let cert = cert.serialize_pem().unwrap();
 
         let input_list = Input::generate();
-        let current_input = input_list.values().nth(0).unwrap().name.clone();
+        let current_input = input_list.values().next().unwrap().name.clone();
 
         Self {
             name,
@@ -112,7 +112,7 @@ impl VizioDevice {
 pub async fn emulate(port: PortOption) {
     let device = Arc::new( VizioDevice::build(port) );
 
-    // Device Description Server
+    // --- Device Description Server
     let descriptions =
         warp::path("ssdp")
         .and(warp::path("device-desc.xml"))
@@ -134,8 +134,7 @@ pub async fn emulate(port: PortOption) {
 
     tokio::spawn( warp::serve(descriptions).run(([127, 0, 0, 1], 8008)) );
 
-    // Device API Server
-
+    // --- Device API Server
     let expected_put =
         warp::get()
         .map(|| {
@@ -169,6 +168,7 @@ pub async fn emulate(port: PortOption) {
             )
         });
 
+    // Pairing Commands
     let pairing =
         warp::path("pairing")
         .and(
@@ -193,6 +193,7 @@ pub async fn emulate(port: PortOption) {
             .or(expected_put)
     );
 
+    // Power State
     let power_state =
         warp::path!("state" / "device" / "power_mode")
         .and(
@@ -206,6 +207,7 @@ pub async fn emulate(port: PortOption) {
             .or( expected_get )
         );
 
+    // Input Commands
     let inputs =
         warp::path("menu_native")
         .and(warp::path("dynamic"))

@@ -3,7 +3,6 @@ use super::{Error, Result};
 use serde_json::Value;
 
 pub fn process(mut response: Value) -> Result<Option<Value>> {
-    // println!("{:#?}", response);
     // TO-DO: handle bad request xml
 
     let result: String =
@@ -16,35 +15,35 @@ pub fn process(mut response: Value) -> Result<Option<Value>> {
 
     match result {
         "success" => {},
-        "invalid_parameter"             => Err(Error::InvalidParameter)?,
-        "uri_not_found"                 => Err(Error::UriNotFound)?,
-        "max_challenges_exceeded"       => Err(Error::MaxChallengesExceeded)?,
-        "pairing_denied"                => Err(Error::PairingDenied)?,
-        "value_out_of_range"            => Err(Error::ValueOutOfRange)?,
-        "challenge_incorrect"           => Err(Error::ChallengeIncorrect)?,
-        "blocked"                       => Err(Error::Blocked)?,
-        "failure"                       => Err(Error::Failure)?,
-        "aborted"                       => Err(Error::Aborted)?,
-        "busy"                          => Err(Error::Busy)?,
-        "requires_pairing"              => Err(Error::RequiresPairing)?,
-        "requires_system_pin"           => Err(Error::RequiresSystemPin)?,
-        "requires_new_system_pin"       => Err(Error::RequiresNewSystemPin)?,
-        "net_wifi_needs_valid_ssid"     => Err(Error::NetWifiNeedsValidSSID)?,
-        "net_wifi_already_connected"    => Err(Error::NetWifiAlreadyConnected)?,
-        "net_wifi_missing_password"     => Err(Error::NetWifiMissingPassword)?,
-        "net_wifi_not_existed"          => Err(Error::NetWifiNotExisted)?,
-        "net_wifi_auth_rejected"        => Err(Error::NetWifiAuthRejected)?,
-        "net_wifi_connect_timeout"      => Err(Error::NetWifiConnectTimeout)?,
-        "net_wifi_connect_aborted"      => Err(Error::NetWifiConnectAborted)?,
-        "net_wifi_connection_error"     => Err(Error::NetWifiConnection)?,
-        "net_ip_manual_config_error"    => Err(Error::NetIPManualConfig)?,
-        "net_ip_dhcp_failed"            => Err(Error::NetIPDHCPFailed)?,
-        "net_unknown_error"             => Err(Error::NetUnknown)?,
+        "invalid_parameter"             => return Err(Error::InvalidParameter),
+        "uri_not_found"                 => return Err(Error::UriNotFound),
+        "max_challenges_exceeded"       => return Err(Error::MaxChallengesExceeded),
+        "pairing_denied"                => return Err(Error::PairingDenied),
+        "value_out_of_range"            => return Err(Error::ValueOutOfRange),
+        "challenge_incorrect"           => return Err(Error::ChallengeIncorrect),
+        "blocked"                       => return Err(Error::Blocked),
+        "failure"                       => return Err(Error::Failure),
+        "aborted"                       => return Err(Error::Aborted),
+        "busy"                          => return Err(Error::Busy),
+        "requires_pairing"              => return Err(Error::RequiresPairing),
+        "requires_system_pin"           => return Err(Error::RequiresSystemPin),
+        "requires_new_system_pin"       => return Err(Error::RequiresNewSystemPin),
+        "net_wifi_needs_valid_ssid"     => return Err(Error::NetWifiNeedsValidSSID),
+        "net_wifi_already_connected"    => return Err(Error::NetWifiAlreadyConnected),
+        "net_wifi_missing_password"     => return Err(Error::NetWifiMissingPassword),
+        "net_wifi_not_existed"          => return Err(Error::NetWifiNotExisted),
+        "net_wifi_auth_rejected"        => return Err(Error::NetWifiAuthRejected),
+        "net_wifi_connect_timeout"      => return Err(Error::NetWifiConnectTimeout),
+        "net_wifi_connect_aborted"      => return Err(Error::NetWifiConnectAborted),
+        "net_wifi_connection_error"     => return Err(Error::NetWifiConnection),
+        "net_ip_manual_config_error"    => return Err(Error::NetIPManualConfig),
+        "net_ip_dhcp_failed"            => return Err(Error::NetIPDHCPFailed),
+        "net_unknown_error"             => return Err(Error::NetUnknown),
         _ => {
-            Err(format!("Uncaught failure, could be an api bug.\nStatus Result: {}\nDetail: {}\n",
+            return Err(format!("Uncaught failure, could be an api bug.\nStatus Result: {}\nDetail: {}\n",
                 response["STATUS"]["RESULT"].to_string(),
                 response["STATUS"]["DETAIL"].to_string()
-            ))?;
+            ).into());
         },
     }
 

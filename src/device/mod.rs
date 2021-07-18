@@ -53,7 +53,7 @@ impl Device {
             name: name.into(),
             manufacturer: manufacturer.into(),
             model: model.into(),
-            ip_addr: ip_addr.into(),
+            ip_addr,
             port: 7345,
             uuid: uuid.into(),
             auth_token: None,
@@ -116,7 +116,7 @@ impl Device {
     /// ```
     pub async fn from_uuid<S: Into<String>>(uuid: S) -> Result<Self> {
         let mut device_vec = ssdp(constant::SSDP_IP, &format!("uuid:{}", uuid.into()), constant::DEFAULT_SSDP_MAXTIME ).await?;
-        if device_vec.len() > 0 {
+        if !device_vec.is_empty() {
             Ok(device_vec.swap_remove(0))
         } else {
             Err(Error::Other("Device not found".into()))
@@ -437,10 +437,10 @@ impl Device {
         }
 
         // Send command
-        let res = req.send().await.unwrap();
+        let res = req.send().await?;
 
         // Process response
-        response::process(res.json().await.unwrap())
+        response::process(res.json().await?)
     }
 }
 

@@ -1,12 +1,7 @@
-use std::borrow::Borrow;
-
-use http::header::IterMut;
-use tokio::macros::support::thread_rng_n;
-
 use super::*;
 
 pub fn power_state(device: Arc<VizioDevice>) -> warp::reply::Json {
-    let mut res = format!(r#"
+    let res = format!(r#"
     {{
         "ITEMS": [{{
             "TYPE": "T_VALUE_V1",

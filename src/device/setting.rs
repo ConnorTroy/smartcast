@@ -176,12 +176,9 @@ where
     let string = String::deserialize(deserializer)?;
     string
         .to_lowercase()
-        .parse::<bool>()
-        .or(Err(
-            de::Error::invalid_type(
-                de::Unexpected::Str(&string),
-                &"a boolean"
-            )
+        .parse::<bool>().map_err(|_| de::Error::invalid_type(
+            de::Unexpected::Str(&string),
+            &"a boolean"
         ))
 }
 
