@@ -7,7 +7,7 @@ use serde::ser::{Serialize, Serializer, SerializeStruct};
 pub enum Command {
     StartPairing{client_name: String, client_id: String},
     FinishPairing{client_id: String, pairing_token: u32, challenge: u32, response_value: String},
-    CancelPairing{client_name: String, client_id: String},
+    CancelPairing{client_id: String, pairing_token: u32, challenge: u32},
 
     GetPowerState,
     RemoteButtonPress(Vec<ButtonEvent>),
@@ -40,7 +40,7 @@ impl Command {
             Self::ChangeInput{..}                   => "/menu_native/dynamic/tv_settings/devices/current_input".into(),
             Self::LaunchApp                         => "/app/launch".into(),
             Self::ReadSettings(subsetting)          => subsetting.endpoint(UrlBase::Dynamic),
-            Self::ReadStaticSettings(subsetting)    => subsetting.endpoint(UrlBase::Static), 
+            Self::ReadStaticSettings(subsetting)    => subsetting.endpoint(UrlBase::Static),
             // Self::WriteSettings             => "/menu_native/dynamic/tv_settings/SETTINGS_CNAME/ITEMS_CNAME",
         }
     }
@@ -70,11 +70,18 @@ impl Serialize for Command {
         S: Serializer
     {
         match self {
-            Self::StartPairing{client_name, client_id}
-            | Self::CancelPairing{client_name, client_id} => {
+            Self::StartPairing{client_name, client_id} => {
                 let mut command = serializer.serialize_struct("", 2)?;
                 command.serialize_field("DEVICE_NAME",  client_name)?;
                 command.serialize_field("DEVICE_ID",    client_id)?;
+                command.end()
+            },
+            Self::CancelPairing{client_id, pairing_token, challenge} => {
+                let mut command = serializer.serialize_struct("", 4)?;
+                command.serialize_field("DEVICE_ID",            client_id)?;
+                command.serialize_field("CHALLENGE_TYPE",       challenge)?;
+                command.serialize_field("RESPONSE_VALUE",       "1111")?;
+                command.serialize_field("PAIRING_REQ_TOKEN",    pairing_token)?;
                 command.end()
             },
             Self::FinishPairing{client_id, pairing_token, challenge, response_value} => {

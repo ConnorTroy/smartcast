@@ -259,19 +259,16 @@ impl Device {
     /// let (pairing_token, challenge) = dev.begin_pair(client_name, client_id).await?;
     ///
     /// // Cancel Pairing
-    /// dev.cancel_pair(client_name, client_id).await?;
+    /// dev.cancel_pair(client_id, pairing_token, challenge).await?;
     /// # Ok(())
     /// # }
     /// ```
-    ///
-    /// **The SmartCast API has changed. This method may return an error until more info
-    /// is learned about how to access this function on the device. For now a soft reboot
-    /// or waiting for a timeout is the only way to cancel pairing mode.**
-    pub async fn cancel_pair<S: Into<String>>(&self, client_name: S, client_id: S) -> Result<()> {
+    pub async fn cancel_pair<S: Into<String>>(&self, client_id: S, pairing_token: u32, challenge: u32) -> Result<()> {
         self.send_command(
             Command::CancelPairing {
-                client_name: client_name.into(),
                 client_id: client_id.into(),
+                pairing_token,
+                challenge
             }
         ).await?;
         Ok(())

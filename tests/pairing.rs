@@ -27,8 +27,8 @@ async fn pair_cancel() {
     let client_name = "name";
     let client_id = "id";
 
-    dev.begin_pair(client_name, client_id).await.unwrap();
-    dev.cancel_pair(client_name, client_id).await.unwrap();
+    let (token, challenge) = dev.begin_pair(client_name, client_id).await.unwrap();
+    dev.cancel_pair(client_id, token, challenge).await.unwrap();
 }
 
 // #[tokio::test]
