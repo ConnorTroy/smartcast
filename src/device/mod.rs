@@ -22,11 +22,13 @@ use std::time::Duration;
 // use std::cell::RefCell;
 
 /// A Vizio Device
+// TODO: Document
 #[derive(Debug, Clone)]
 pub struct Device {
     name: String,
     manufacturer: String,
     model: String,
+    dev_type: DeviceType,
     ip_addr: String,
     port: u16,
     uuid: String,
@@ -36,31 +38,46 @@ pub struct Device {
 }
 
 impl Device {
-    pub(crate) fn new<S: Into<String>>(
+    pub(crate) async fn new<S: Into<String>>(
         name: S,
         manufacturer: S,
         model: S,
         ip_addr: S,
         uuid: S
-    ) -> Device {
+    ) -> Result<Device> {
 
+        // Workaround for testing issues on loopback
         let ip_addr = match ip_addr.into().as_str() {
             "127.0.0.1" => "localhost",
             other => other,
         }.to_string();
 
-        Device {
+        let mut device = Device {
             name: name.into(),
             manufacturer: manufacturer.into(),
             model: model.into(),
+            dev_type: DeviceType::TV,
             ip_addr,
-            port: 7345,
+            port: 0,
             uuid: uuid.into(),
             auth_token: None,
             // info: Arc::new(RwLock::new(
             //     DeviceInfo::build(name, manufacturer, model, ip_addr, uuid)
             // )),
             client: Self::new_client(),
+        };
+
+        // Check port options
+        let mut res = Err(Error::Other("Uninitialized".into()));
+        for port in constant::PORT_OPTIONS {
+            device.port = port;
+            res = device.send_command(Command::GetDeviceInfo).await;
+            if res.is_ok() { break; }
+        };
+
+        match res {
+            Ok(_) => Ok(device),
+            Err(e) => Err(e),
         }
     }
 
@@ -145,7 +162,6 @@ impl Device {
 
     /// Get device's port
     pub fn port(&self) -> u16 {
-        // TO-DO: Verify port (dependant on device firmware)
         self.port
     }
 
@@ -159,11 +175,19 @@ impl Device {
         self.auth_token.clone()
     }
 
-    /// If already paired, you may manually set the client's auth token for the device.
-    pub fn set_auth_token<S: Into<String>>(&mut self, token: S) -> Result<()> {
+    /// If previously paired, you may manually set the client's auth token for the device.
+    pub async fn set_auth_token<S: Into<String>>(&mut self, token: S) -> Result<()> {
+        let old_token = self.auth_token.clone();
         self.auth_token = Some(token.into());
-        // TO-DO: Verify token
-        Ok(())
+
+        // Send a command which requires pairing to test token
+        match self.send_command(Command::ReadSettings(SubSetting::default())).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                self.auth_token = old_token;
+                Err(e)
+            }
+        }
     }
 
     /// Begin the pairing process
@@ -175,17 +199,13 @@ impl Device {
     /// will need to be passed into [`finish_pair()`](./struct.Device.html/#method.finish_pair)
     /// along with the pin displayed on the device screen.
     pub async fn begin_pair<S: Into<String>>(&self, client_name: S, client_id: S) -> Result<(u32, u32)> {
-        let mut res = self.send_command(
+        let res = self.send_command(
             Command::StartPairing {
                 client_name: client_name.into(),
                 client_id: client_id.into(),
             }
-        ).await?.unwrap();
-
-        let pairing_token: u32 = serde_json::from_value(res["PAIRING_REQ_TOKEN"].take()).unwrap();
-        let challenge: u32 = serde_json::from_value(res["CHALLENGE_TYPE"].take()).unwrap();
-
-        Ok((pairing_token, challenge))
+        ).await?;
+        Ok((res.pairing_token()?, res.challenge()?))
     }
 
     /// Finish the pairing process
@@ -224,19 +244,15 @@ impl Device {
         // Strip non digits
         let pin: String = pin.into().chars().filter(|c| c.is_digit(10)).collect();
 
-        let mut res = self.send_command(
+        let res = self.send_command(
             Command::FinishPairing {
                 client_id: client_id.into(),
                 pairing_token,
                 challenge,
                 response_value: pin,
             }
-        ).await?.unwrap();
-
-        let auth_token: String = serde_json::from_value(res["AUTH_TOKEN"].take()).unwrap();
-
-        self.auth_token = Some(auth_token.clone());
-        Ok(auth_token)
+        ).await?;
+        Ok(res.auth_token()?)
     }
 
     /// Cancel the pairing process
@@ -276,9 +292,8 @@ impl Device {
 
     /// Check whether the device is powered on
     pub async fn is_powered_on(&self) -> Result<bool> {
-        let mut res = self.send_command(Command::GetPowerState).await?.unwrap();
-        let power_state: u32 = serde_json::from_value(res[0]["VALUE"].take()).unwrap();
-        Ok(power_state == 1)
+        let res = self.send_command(Command::GetPowerState).await?;
+        Ok(res.power_state()?)
     }
 
     /// Emulates a button press on a remote control
@@ -319,14 +334,14 @@ impl Device {
 
     /// Get the current device input
     pub async fn current_input(&self) -> Result<Input> {
-        let mut res = self.send_command(Command::GetCurrentInput).await?.unwrap();
-        Ok(Input::from_value(&mut res[0]))
+        let res = self.send_command(Command::GetCurrentInput).await?;
+        Ok(res.current_input()?)
     }
 
     /// Get list of available inputs
     pub async fn list_inputs(&self) -> Result<Vec<Input>> {
-        let mut res = self.send_command(Command::GetInputList).await?.unwrap();
-        Ok(Input::from_array(&mut res))
+        let res = self.send_command(Command::GetInputList).await?;
+        Ok(res.input_list()?)
     }
 
     /// Changes the input of the device
@@ -361,21 +376,47 @@ impl Device {
         Ok(())
     }
 
-    /// TO-DO Document
-    pub async fn read_settings(&self, subsetting: SubSetting) -> Result<Vec<SubSetting>> {
+    /// TO-DO: Document
+    pub async fn device_info(&self) -> Result<()> {
+        let res = self.send_command(Command::GetDeviceInfo).await?;
+        println!("{:#?}", res.device_info());
+        Ok(())
+    }
 
+    /// TO-DO: Document
+    pub async fn current_app(&self) -> Result<()> {
+        let res = self.send_command(Command::GetCurrentApp).await?;
+        println!("{:#?}", res);
+        Ok(())
+    }
+
+    /// TO-DO: Document
+    pub async fn list_apps(&self) -> Result<Vec<App>> {
+        Ok(fetch_apps(&self.client).await?)
+    }
+
+    /// TO-DO: Document
+    pub async fn launch_app(&self, app: &App) -> Result<()> {
+        let res = self.send_command(Command::LaunchApp(app.payload())).await?;
+        println!("{:#?}", res);
+        Ok(())
+    }
+
+    /// TO-DO Document
+    pub async fn read_settings(&self, subsetting: &SubSetting) -> Result<Vec<SubSetting>> {
+
+        // TO-DO Feature to diable block
         if subsetting.hidden() {
             return Err(Error::Blocked);
         } else if subsetting.object_type() != ObjectType::Menu {
-            return Ok(vec![subsetting]);
+            return Ok(vec![subsetting.clone()]);
         }
 
-        let res = self.send_command(Command::ReadSettings(subsetting.clone())).await?.unwrap();
+        let res: Response = self.send_command(Command::ReadSettings(subsetting.clone())).await?;
+        let mut settings = res.settings()?;
 
-        let mut settings_res: Vec<SubSetting> = serde_json::from_value(res)?;
-
-        let parent_endpoint = subsetting.endpoint(UrlBase::None);
-        for setting in settings_res.iter_mut() {
+        let parent_endpoint = subsetting.endpoint(UrlBase::None, &self.dev_type);
+        for setting in settings.iter_mut() {
             setting.add_parent_endpoint(parent_endpoint.clone());
 
             if setting.hidden() {
@@ -385,28 +426,28 @@ impl Device {
             match setting.object_type() {
                 ObjectType::Slider => {
                     if setting.slider_info().is_none() {
-                        let static_setting = self.send_command(Command::ReadStaticSettings(setting.clone())).await?.unwrap();
-                        let slider_info: setting::SliderInfo = serde_json::from_value(static_setting[0].clone())?;
-                        setting.add_slider_info(slider_info);
+                        let res = self.send_command(Command::ReadStaticSettings(setting.clone())).await?;
+                        setting.add_slider_info(res.slider_info()?);
                     }
                 },
                 ObjectType::List
                 | ObjectType::XList => {
                     if setting.elements().is_none() {
-                        let static_setting = self.send_command(Command::ReadStaticSettings(setting.clone())).await?.unwrap();
-                        let elements: Vec<String> = serde_json::from_value(static_setting[0]["ELEMENTS"].clone())?;
-                        setting.add_elements(elements);
+                        let res = self.send_command(Command::ReadStaticSettings(setting.clone())).await?;
+                        setting.add_elements(res.elements()?);
                     }
                 }
                 _ => {},
             }
         }
 
-        Ok(settings_res)
+        Ok(settings)
     }
 
-    async fn send_command(&self, command: Command) -> Result<Option<Value>> {
-        let url: String = format!("https://{}:{}{}", self.ip_addr, self.port, command.endpoint());
+    async fn send_command(&self, command: Command) -> Result<Response> {
+        let url: String = format!("https://{}:{}{}", self.ip_addr, self.port, command.endpoint(&self.dev_type));
+
+        println!("{:#?}", serde_json::to_string(&command).unwrap());
 
         // Start building request
         let mut req = match command.request_type() {

@@ -1,16 +1,13 @@
 use super::Result;
 use super::Error;
 
-// use serde::de;
-// use serde::de::{Deserialize, Deserializer, Visitor, MapAccess};
 use serde_json::Value;
 use serde::{de, Deserialize};
 
 use std::result::Result as StdResult;
-// use std::fmt;
 
-const STATIC_BASE: &str = "/menu_native/static/tv_settings/";
-const DYNAMIC_BASE: &str = "/menu_native/dynamic/tv_settings/";
+const STATIC_BASE: &str = "/menu_native/static/";
+const DYNAMIC_BASE: &str = "/menu_native/dynamic/";
 
 pub trait SettingValue<T> {
     fn value(&self) -> Result<T>;
@@ -116,8 +113,8 @@ impl SubSetting {
         self.elements.clone()
     }
 
-    pub(crate) fn endpoint(&self, endpoint_base: UrlBase) -> String {
-        endpoint_base.base() + &self.endpoint
+    pub(crate) fn endpoint(&self, endpoint_base: UrlBase, device_type: &super::DeviceType) -> String {
+        format!("{}/{}/{}", endpoint_base.base(), device_type.endpoint(), self.endpoint)
     }
 
     pub(crate) fn add_parent_endpoint(&mut self, parent_endpoint: String) {
@@ -181,147 +178,3 @@ where
             &"a boolean"
         ))
 }
-
-// impl<'de> Deserialize<'de> for SettingSubmenu {
-//     fn deserialize<D>(deserializer: D) -> Result<SettingSubmenu, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         enum Field { CName, Elements, Hashval, Hidden, Name, ReadOnly, Type, Value, Extra}
-
-//         impl<'de> Deserialize<'de> for Field {
-//             fn deserialize<D>(deserializer: D) -> Result<Field, D::Error>
-//             where
-//                 D: Deserializer<'de>,
-//             {
-//                 struct FieldVisitor;
-
-//                 impl<'de> Visitor<'de> for FieldVisitor {
-//                     type Value = Field;
-
-//                     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-//                         formatter.write_str("`CNAME` or `ELEMENTS` or `HASHVAL` or `HIDDEN` or `NAME` or `READONLY` or `TYPE` or `VALUE`")
-//                     }
-
-//                     fn visit_str<E>(self, value: &str) -> Result<Field, E>
-//                     where
-//                         E: de::Error,
-//                     {
-//                         match value {
-//                             "CNAME"     => Ok(Field::CName),
-//                             "ELEMENTS"  => Ok(Field::Elements),
-//                             "HASHVAL"   => Ok(Field::Hashval),
-//                             "HIDDEN"    => Ok(Field::Hidden),
-//                             "NAME"      => Ok(Field::Name),
-//                             "READONLY"  => Ok(Field::ReadOnly),
-//                             "TYPE"      => Ok(Field::Type),
-//                             "VALUE"     => Ok(Field::Value),
-//                             "INDEX"     => Ok(Field::Extra),
-//                             "STATUS"    => Ok(Field::Extra),
-//                             "ENABLED"   => Ok(Field::Extra),
-//                             _ => Err(de::Error::unknown_field(value, FIELDS)),
-//                         }
-//                     }
-//                 }
-
-//                 deserializer.deserialize_identifier(FieldVisitor)
-//             }
-//         }
-
-//         struct SettingsVisitor;
-
-//         impl<'de> Visitor<'de> for SettingsVisitor {
-//             type Value = SettingSubmenu;
-
-//             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-//                 formatter.write_str("")
-//             }
-
-//             fn visit_map<V>(self, mut map: V) -> Result<SettingSubmenu, V::Error>
-//             where
-//                 V: MapAccess<'de>,
-//             {
-//                 let mut cname = None;
-//                 let mut elements = None;
-//                 let mut hashval = None;
-//                 let mut hidden = None;
-//                 let mut name = None;
-//                 let mut readonly = None;
-//                 let mut object_type = None;
-//                 let mut value = None;
-//                 while let Some(key) = map.next_key()? {
-//                     match key {
-//                         Field::CName => {
-//                             if cname.is_some() {
-//                                 return Err(de::Error::duplicate_field("CNAME"));
-//                             }
-//                             cname = Some(map.next_value()?);
-//                         },
-//                         Field::Elements => {
-//                             if elements.is_some() {
-//                                 return Err(de::Error::duplicate_field("ELEMENTS"));
-//                             }
-//                             elements = Some(map.next_value()?);
-//                         },
-//                         Field::Hashval => {
-//                             if hashval.is_some() {
-//                                 return Err(de::Error::duplicate_field("HASHVAL"));
-//                             }
-//                             hashval = Some(map.next_value()?);
-//                         },
-//                         Field::Hidden => {
-//                             if hidden.is_some() {
-//                                 return Err(de::Error::duplicate_field("HIDDEN"));
-//                             }
-//                             hidden = Some(map.next_value::<bool>()?);
-//                         },
-//                         Field::Name => {
-//                             if name.is_some() {
-//                                 return Err(de::Error::duplicate_field("NAME"));
-//                             }
-//                             name = Some(map.next_value()?);
-//                         },
-//                         Field::ReadOnly => {
-//                             if readonly.is_some() {
-//                                 return Err(de::Error::duplicate_field("READONLY"));
-//                             }
-//                             readonly = Some(map.next_value::<bool>()?);
-//                         },
-//                         Field::Type => {
-//                             if object_type.is_some() {
-//                                 return Err(de::Error::duplicate_field("TYPE"));
-//                             }
-//                             object_type = Some(
-//                                 match map.next_value::<String>()?.to_lowercase().as_str() {
-//                                     // "t_value_abs_v1" => ObjectType::Slider,
-//                                     "t_list_v1" => ObjectType::List,
-//                                     "t_value_v1" => ObjectType::Value,
-//                                     "t_menu_v1" => ObjectType::Menu,
-//                                     "t_list_x_v1" => ObjectType::XList(elements.clone().unwrap()),
-//                                     key => ObjectType::Other(key.into()),
-//                                 }
-//                             );
-//                         },
-//                         Field::Value => {
-//                             if value.is_some() {
-//                                 return Err(de::Error::duplicate_field("VALUE"));
-//                             }
-//                             value = Some(map.next_value()?);
-//                         },
-//                         _ => {},
-//                     }
-//                 }
-//                 let cname = cname.ok_or_else(|| de::Error::missing_field("CNAME"))?;
-//                 let hidden = hidden.unwrap_or(false);
-//                 let name = name.ok_or_else(|| de::Error::missing_field("NAME"))?;
-//                 let readonly = readonly.unwrap_or(false);
-//                 let object_type = object_type.ok_or_else(|| de::Error::missing_field("TYPE"))?;
-//                 Ok(SettingSubmenu::build(cname, hashval, hidden, name, readonly, object_type, value))
-//             }
-//         }
-
-//         const FIELDS: &'static [&'static str] = &["CNAME", "HASHVAL", "HIDDEN", "ELEMENTS", "GROUP", "NAME", "TYPE", "VALUE"];
-//         deserializer.deserialize_struct("", FIELDS, SettingsVisitor)
-//     }
-// }
-

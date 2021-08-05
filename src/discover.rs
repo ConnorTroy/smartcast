@@ -71,7 +71,7 @@ pub(super) async fn uaudp_followup(location: &str) -> Result<Option<Device>> {
                     model_name,
                     ip_addr,
                     uuid,
-                )
+                ).await?
             ))
         },
         _ => Ok(None)
@@ -221,7 +221,7 @@ mod tests {
                 &rand_string[16..20],
                 &rand_string[20..32]
             ),
-        );
+        ).await.unwrap();
 
         // Return Device to be expected by main test
         if let Some(device_tx) = device_tx {

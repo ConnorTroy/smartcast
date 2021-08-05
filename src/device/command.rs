@@ -10,12 +10,19 @@ pub enum Command {
     CancelPairing{client_id: String, pairing_token: u32, challenge: u32},
 
     GetPowerState,
+    GetDeviceInfo,
     RemoteButtonPress(Vec<ButtonEvent>),
-
+    GetESN,
+    GetSerial,
+    GetVersion,
+    GetESNAlt,
+    GetSerialAlt,
+    GetVersionAlt,
     GetCurrentInput,
     GetInputList,
     ChangeInput{name: String, hashval: u32},
-    LaunchApp,
+    GetCurrentApp,
+    LaunchApp(String),
     ReadSettings(SubSetting),
     ReadStaticSettings(SubSetting),
     // WriteSettings, // To-do (Brick warning)
@@ -26,21 +33,44 @@ pub enum RequestType {
     Put,
 }
 
+#[derive(Debug, Clone)]
+pub enum DeviceType {
+    TV,
+    SoundBar,
+}
+
+impl DeviceType {
+    pub fn endpoint(&self) -> String {
+        match self {
+            Self::TV        => "tv_settings",
+            Self::SoundBar  => "audio_settings",
+        }.into()
+    }
+}
+
 impl Command {
     /// Get the endpoint of the command
-    pub fn endpoint(&self) -> String {
+    pub fn endpoint(&self, device_type: &DeviceType) -> String {
         match self {
             Self::StartPairing{..}                  => "/pairing/start".into(),
             Self::FinishPairing{..}                 => "/pairing/pair".into(),
             Self::CancelPairing{..}                 => "/pairing/cancel".into(),
             Self::GetPowerState                     => "/state/device/power_mode".into(),
+            Self::GetDeviceInfo                     => "/state/device/deviceinfo".into(),
             Self::RemoteButtonPress{..}             => "/key_command/".into(),
-            Self::GetCurrentInput                   => "/menu_native/dynamic/tv_settings/devices/current_input".into(),
-            Self::GetInputList                      => "/menu_native/dynamic/tv_settings/devices/name_input".into(),
-            Self::ChangeInput{..}                   => "/menu_native/dynamic/tv_settings/devices/current_input".into(),
-            Self::LaunchApp                         => "/app/launch".into(),
-            Self::ReadSettings(subsetting)          => subsetting.endpoint(UrlBase::Dynamic),
-            Self::ReadStaticSettings(subsetting)    => subsetting.endpoint(UrlBase::Static),
+            Self::GetESN                            => format!("/menu_native/dynamic/{}/system/system_information/uli_information/esn", device_type.endpoint()),
+            Self::GetSerial                         => format!("/menu_native/dynamic/{}/system/system_information/tv_information/serial_number", device_type.endpoint()),
+            Self::GetVersion                        => format!("/menu_native/dynamic/{}/system/system_information/tv_information/version", device_type.endpoint()),
+            Self::GetESNAlt                         => format!("/menu_native/dynamic/{}/admin_and_privacy/system_information/uli_information/esn", device_type.endpoint()),
+            Self::GetSerialAlt                      => format!("/menu_native/dynamic/{}/admin_and_privacy/system_information/tv_information/serial_number", device_type.endpoint()),
+            Self::GetVersionAlt                     => format!("/menu_native/dynamic/{}/admin_and_privacy/system_information/tv_information/version", device_type.endpoint()),
+            Self::GetCurrentInput                   => format!("/menu_native/dynamic/{}/devices/current_input", device_type.endpoint()),
+            Self::GetInputList                      => format!("/menu_native/dynamic/{}/devices/name_input", device_type.endpoint()),
+            Self::ChangeInput{..}                   => format!("/menu_native/dynamic/{}/devices/current_input", device_type.endpoint()),
+            Self::GetCurrentApp                     => "/app/current".into(),
+            Self::LaunchApp(_)                      => "/app/launch".into(),
+            Self::ReadSettings(subsetting)          => subsetting.endpoint(UrlBase::Dynamic, device_type),
+            Self::ReadStaticSettings(subsetting)    => subsetting.endpoint(UrlBase::Static, device_type),
             // Self::WriteSettings             => "/menu_native/dynamic/tv_settings/SETTINGS_CNAME/ITEMS_CNAME",
         }
     }
@@ -53,11 +83,20 @@ impl Command {
             | Self::CancelPairing{..}
             | Self::RemoteButtonPress{..}
             | Self::ChangeInput{..}
-            | Self::LaunchApp       => RequestType::Put,
+            | Self::LaunchApp(_)       => RequestType::Put,
             // Self::WriteSettings     => RequestType::Put,
+
             Self::GetPowerState
+            | Self::GetDeviceInfo
+            | Self::GetESN
+            | Self::GetSerial
+            | Self::GetVersion
+            | Self::GetESNAlt
+            | Self::GetSerialAlt
+            | Self::GetVersionAlt
             | Self::GetCurrentInput
             | Self::GetInputList
+            | Self::GetCurrentApp
             | Self::ReadSettings(_)
             | Self::ReadStaticSettings(_) => RequestType::Get,
         }

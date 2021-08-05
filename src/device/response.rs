@@ -1,8 +1,57 @@
-use super::{Error, Result};
+use super::{Error, Input, Result, SubSetting, setting::SliderInfo};
 
 use serde_json::Value;
 
-pub fn process(mut response: Value) -> Result<Option<Value>> {
+#[derive(Debug)]
+pub struct Response {
+    pub value: Value,
+}
+
+impl Response {
+    pub fn pairing_token(&self) -> Result<u32> {
+        Ok(serde_json::from_value(self.value["ITEM"]["PAIRING_REQ_TOKEN"].clone())?)
+    }
+    pub fn challenge(&self) -> Result<u32> {
+        Ok(serde_json::from_value(self.value["ITEM"]["CHALLENGE_TYPE"].clone())?)
+    }
+    pub fn auth_token(&self) -> Result<String> {
+        Ok(serde_json::from_value(self.value["ITEM"]["AUTH_TOKEN"].clone())?)
+    }
+    pub fn power_state(&self) -> Result<bool> {
+        Ok(serde_json::from_value::<u32>(self.value["ITEMS"][0]["VALUE"].clone())? == 1)
+    }
+    pub fn device_info(&self) -> Result<Value> {
+        Ok(self.value.clone()) // TODO: Device Info Struct
+    }
+    pub fn esn(&self) -> Result<String> {
+        Ok(serde_json::from_value(self.value["ITEMS"][0]["VALUE"].clone())?)
+    }
+    pub fn serial(&self) -> Result<String> {
+        Ok(serde_json::from_value(self.value["ITEMS"][0]["VALUE"].clone())?)
+    }
+    pub fn fw_version(&self) -> Result<String> {
+        Ok(serde_json::from_value(self.value["ITEMS"][0]["VALUE"].clone())?)
+    }
+    pub fn current_input(&self) -> Result<Input> {
+        Ok(serde_json::from_value(self.value["ITEMS"][0].clone())?)
+    }
+    pub fn input_list(&self) -> Result<Vec<Input>> {
+        Ok(serde_json::from_value(self.value["ITEMS"].clone())?)
+    }
+    // Get Current App
+    pub fn settings(&self) -> Result<Vec<SubSetting>> {
+        Ok(serde_json::from_value(self.value["ITEMS"].clone())?)
+    }
+    pub fn slider_info(&self) -> Result<SliderInfo> {
+        Ok(serde_json::from_value(self.value["ITEMS"][0].clone())?)
+    }
+    pub fn elements(&self) -> Result<Vec<String>> {
+        Ok(serde_json::from_value(self.value["ITEMS"][0]["ELEMENTS"].clone())?)
+    }
+    // Write Settings
+}
+
+pub fn process(response: Value) -> Result<Response> {
     // TO-DO: handle bad request xml
 
     let result: String =
@@ -13,6 +62,7 @@ pub fn process(mut response: Value) -> Result<Option<Value>> {
     // Remove quotes
     let result: &str = &result[1 .. result.len() - 1];
 
+    // Error Handling
     match result {
         "success" => {},
         "invalid_parameter"             => return Err(Error::InvalidParameter),
@@ -47,70 +97,7 @@ pub fn process(mut response: Value) -> Result<Option<Value>> {
         },
     }
 
-    // TO-DO: do this better.
-    let item: Option<Value> = match (&response["ITEM"], &response["ITEMS"]) {
-        (Value::Null, Value::Null) => None,
-        (Value::Object(_), Value::Null) => Some(response["ITEM"].take()),
-        (Value::Null, Value::Array(_)) => Some(response["ITEMS"].take()),
-        _ => panic!("Unexpected response json")
-    };
+    // println!("{:#?}", response);
 
-    Ok(item)
-}
-
-#[derive(Debug, Clone)]
-pub struct Input {
-    name: String,
-    friendly_name: String,
-    hashval: u32,
-}
-
-impl Input {
-    fn new(name: String, friendly_name: String, hashval: u32) -> Self {
-        Self {
-            name,
-            friendly_name,
-            hashval,
-        }
-    }
-
-    pub(crate) fn from_value(input_value: &mut Value) -> Self {
-        // "NAME"
-        let name: String = serde_json::from_value(input_value["NAME"].take()).unwrap();
-
-        // "VALUE" is the friendly name for current input or object containing friendly for list of inputs
-        let friendly_name: String =
-            serde_json::from_value::<String>(input_value["VALUE"].clone())
-            .unwrap_or_else(|_|
-                serde_json::from_value::<String>(input_value["VALUE"]["NAME"].take()).unwrap()
-            );
-
-        // "HASHVAL"
-        let hashval: u32 = serde_json::from_value(input_value["HASHVAL"].take()).unwrap();
-
-        Self::new(name, friendly_name, hashval)
-    }
-
-    pub(crate) fn from_array(json_value: &mut Value) -> Vec<Self> {
-        let mut input_vec: Vec<Self> = Vec::new();
-
-        for input_value in json_value.as_array_mut().unwrap() {
-            let input = Self::from_value(input_value);
-            input_vec.push(input);
-        }
-
-        input_vec
-    }
-
-    pub(crate) fn hashval(&self) -> u32 {
-        self.hashval
-    }
-
-    pub fn name(&self) -> String {
-        self.name.clone()
-    }
-
-    pub fn friendly_name(&self) -> String {
-        self.friendly_name.clone()
-    }
+    Ok(Response{value: response})
 }
