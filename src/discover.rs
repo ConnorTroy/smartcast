@@ -16,7 +16,6 @@ pub(super) async fn uaudp_followup(location: &str) -> Result<Option<Device>> {
 
     // Parse xml for device info
     let mut items: Value = serde_xml_rs::from_str(&res).unwrap();
-    println!("{:#?}", items);
 
     let friendly_name =
         serde_json::from_value::<String>(items["device"]["friendlyName"]["$value"].take());
