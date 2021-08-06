@@ -1,25 +1,24 @@
+use super::constant;
+use super::discover::{ssdp, uaudp_followup};
+use super::error::{Error, Result};
+
+mod apps;
 mod command;
+mod input;
 mod response;
 mod setting;
 
-use crate::discover::{ssdp, uaudp_followup};
+pub use self::apps::App;
+pub use self::command::{Button, ButtonEvent, DeviceType};
+pub use self::input::Input;
+pub use self::setting::{ObjectType, SubSetting, UrlBase};
 
+use self::apps::fetch_apps;
 use self::command::{Command, RequestType};
-pub use self::command::{ButtonEvent, Button};
-pub use self::response::Input;
-pub use self::setting::{SubSetting, ObjectType, UrlBase};
-
-use super::constant;
-// use super::discover;
-use super::error::{Error, Result};
+use self::response::Response;
 
 use reqwest::Client;
-use serde_json::Value;
-
 use std::time::Duration;
-// use std::rc::Rc;
-// use std::sync::{Arc, RwLock};
-// use std::cell::RefCell;
 
 /// A Vizio Device
 // TODO: Document
@@ -33,7 +32,6 @@ pub struct Device {
     port: u16,
     uuid: String,
     auth_token: Option<String>,
-    // info: Arc<RwLock<DeviceInfo>>,
     client: Client,
 }
 
@@ -43,14 +41,14 @@ impl Device {
         manufacturer: S,
         model: S,
         ip_addr: S,
-        uuid: S
+        uuid: S,
     ) -> Result<Device> {
-
         // Workaround for testing issues on loopback
         let ip_addr = match ip_addr.into().as_str() {
             "127.0.0.1" => "localhost",
             other => other,
-        }.to_string();
+        }
+        .to_string();
 
         let mut device = Device {
             name: name.into(),
@@ -61,33 +59,44 @@ impl Device {
             port: 0,
             uuid: uuid.into(),
             auth_token: None,
-            // info: Arc::new(RwLock::new(
-            //     DeviceInfo::build(name, manufacturer, model, ip_addr, uuid)
-            // )),
             client: Self::new_client(),
         };
 
         // Check port options
-        let mut res = Err(Error::Other("Uninitialized".into()));
-        for port in constant::PORT_OPTIONS {
-            device.port = port;
-            res = device.send_command(Command::GetDeviceInfo).await;
-            if res.is_ok() { break; }
-        };
+        device.find_port().await?;
 
-        match res {
-            Ok(_) => Ok(device),
-            Err(e) => Err(e),
-        }
+        Ok(device)
     }
 
     fn new_client() -> Client {
         reqwest::Client::builder()
             .timeout(Duration::from_secs(constant::DEFAULT_TIMEOUT))
-            .https_only(true)
             .danger_accept_invalid_certs(true)
             .build()
             .expect("Unable to build Reqwest Client")
+    }
+
+    #[cfg(not(test))]
+    async fn find_port(&mut self) -> Result<Response> {
+        let mut iter = constant::PORT_OPTIONS.iter().peekable();
+
+        let res = loop {
+            if let Some(port) = iter.next() {
+                self.port = *port;
+                let res = self.send_command(Command::GetDeviceInfo).await;
+                if res.is_ok() || iter.peek().is_none() {
+                    break res;
+                }
+            } else {
+                panic!("Reached end of port iterator");
+            }
+        };
+        res
+    }
+
+    #[cfg(test)]
+    async fn find_port(&mut self) -> Result<()> {
+        Ok(())
     }
 
     /// Connect to a SmartCast device from the device's IP Address
@@ -107,9 +116,12 @@ impl Device {
     /// # }
     /// ```
     pub async fn from_ip<S: Into<String>>(ip_addr: S) -> Result<Self> {
-        match uaudp_followup(
-            &format!("http://{}:8008/ssdp/device-desc.xml", ip_addr.into())
-        ).await? {
+        match uaudp_followup(&format!(
+            "http://{}:8008/ssdp/device-desc.xml",
+            ip_addr.into()
+        ))
+        .await?
+        {
             Some(device) => Ok(device),
             None => Err(Error::Other("Device not found".into())),
         }
@@ -132,7 +144,12 @@ impl Device {
     /// # }
     /// ```
     pub async fn from_uuid<S: Into<String>>(uuid: S) -> Result<Self> {
-        let mut device_vec = ssdp(constant::SSDP_IP, &format!("uuid:{}", uuid.into()), constant::DEFAULT_SSDP_MAXTIME ).await?;
+        let mut device_vec = ssdp(
+            constant::SSDP_IP,
+            &format!("uuid:{}", uuid.into()),
+            constant::DEFAULT_SSDP_MAXTIME,
+        )
+        .await?;
         if !device_vec.is_empty() {
             Ok(device_vec.swap_remove(0))
         } else {
@@ -181,7 +198,10 @@ impl Device {
         self.auth_token = Some(token.into());
 
         // Send a command which requires pairing to test token
-        match self.send_command(Command::ReadSettings(SubSetting::default())).await {
+        match self
+            .send_command(Command::ReadSettings(SubSetting::default()))
+            .await
+        {
             Ok(_) => Ok(()),
             Err(e) => {
                 self.auth_token = old_token;
@@ -198,13 +218,17 @@ impl Device {
     /// This method returns a `Pairing Token` and a `Challenge Type` which
     /// will need to be passed into [`finish_pair()`](./struct.Device.html/#method.finish_pair)
     /// along with the pin displayed on the device screen.
-    pub async fn begin_pair<S: Into<String>>(&self, client_name: S, client_id: S) -> Result<(u32, u32)> {
-        let res = self.send_command(
-            Command::StartPairing {
+    pub async fn begin_pair<S: Into<String>>(
+        &self,
+        client_name: S,
+        client_id: S,
+    ) -> Result<(u32, u32)> {
+        let res = self
+            .send_command(Command::StartPairing {
                 client_name: client_name.into(),
                 client_id: client_id.into(),
-            }
-        ).await?;
+            })
+            .await?;
         Ok((res.pairing_token()?, res.challenge()?))
     }
 
@@ -240,18 +264,24 @@ impl Device {
     /// # Ok(auth_token)
     /// # }
     /// ```
-    pub async fn finish_pair<S: Into<String>>(&mut self, client_id: S, pairing_token: u32, challenge: u32, pin: S) -> Result<String> {
+    pub async fn finish_pair<S: Into<String>>(
+        &mut self,
+        client_id: S,
+        pairing_token: u32,
+        challenge: u32,
+        pin: S,
+    ) -> Result<String> {
         // Strip non digits
         let pin: String = pin.into().chars().filter(|c| c.is_digit(10)).collect();
 
-        let res = self.send_command(
-            Command::FinishPairing {
+        let res = self
+            .send_command(Command::FinishPairing {
                 client_id: client_id.into(),
                 pairing_token,
                 challenge,
                 response_value: pin,
-            }
-        ).await?;
+            })
+            .await?;
         Ok(res.auth_token()?)
     }
 
@@ -279,14 +309,18 @@ impl Device {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn cancel_pair<S: Into<String>>(&self, client_id: S, pairing_token: u32, challenge: u32) -> Result<()> {
-        self.send_command(
-            Command::CancelPairing {
-                client_id: client_id.into(),
-                pairing_token,
-                challenge
-            }
-        ).await?;
+    pub async fn cancel_pair<S: Into<String>>(
+        &self,
+        client_id: S,
+        pairing_token: u32,
+        challenge: u32,
+    ) -> Result<()> {
+        self.send_command(Command::CancelPairing {
+            client_id: client_id.into(),
+            pairing_token,
+            challenge,
+        })
+        .await?;
         Ok(())
     }
 
@@ -328,7 +362,8 @@ impl Device {
     /// ```
     pub async fn button_event<V: Into<Vec<ButtonEvent>>>(&self, buttons: V) -> Result<()> {
         let button_vec: Vec<ButtonEvent> = buttons.into();
-        self.send_command(Command::RemoteButtonPress(button_vec)).await?;
+        self.send_command(Command::RemoteButtonPress(button_vec))
+            .await?;
         Ok(())
     }
 
@@ -367,12 +402,11 @@ impl Device {
     /// Note: the input's default name must be passed in, not the input's custom name -- e.g.
     /// "HDMI-2" instead of "Playstation 4"
     pub async fn change_input<S: Into<String>>(&self, name: S) -> Result<()> {
-        self.send_command(
-            Command::ChangeInput{
-                name: name.into(),
-                hashval: self.current_input().await?.hashval(),
-            }
-        ).await?;
+        self.send_command(Command::ChangeInput {
+            name: name.into(),
+            hashval: self.current_input().await?.hashval(),
+        })
+        .await?;
         Ok(())
     }
 
@@ -404,7 +438,6 @@ impl Device {
 
     /// TO-DO Document
     pub async fn read_settings(&self, subsetting: &SubSetting) -> Result<Vec<SubSetting>> {
-
         // TO-DO Feature to diable block
         if subsetting.hidden() {
             return Err(Error::Blocked);
@@ -412,7 +445,9 @@ impl Device {
             return Ok(vec![subsetting.clone()]);
         }
 
-        let res: Response = self.send_command(Command::ReadSettings(subsetting.clone())).await?;
+        let res: Response = self
+            .send_command(Command::ReadSettings(subsetting.clone()))
+            .await?;
         let mut settings = res.settings()?;
 
         let parent_endpoint = subsetting.endpoint(UrlBase::None, &self.dev_type);
@@ -426,18 +461,21 @@ impl Device {
             match setting.object_type() {
                 ObjectType::Slider => {
                     if setting.slider_info().is_none() {
-                        let res = self.send_command(Command::ReadStaticSettings(setting.clone())).await?;
+                        let res = self
+                            .send_command(Command::ReadStaticSettings(setting.clone()))
+                            .await?;
                         setting.add_slider_info(res.slider_info()?);
                     }
-                },
-                ObjectType::List
-                | ObjectType::XList => {
+                }
+                ObjectType::List | ObjectType::XList => {
                     if setting.elements().is_none() {
-                        let res = self.send_command(Command::ReadStaticSettings(setting.clone())).await?;
+                        let res = self
+                            .send_command(Command::ReadStaticSettings(setting.clone()))
+                            .await?;
                         setting.add_elements(res.elements()?);
                     }
                 }
-                _ => {},
+                _ => {}
             }
         }
 
@@ -445,22 +483,24 @@ impl Device {
     }
 
     async fn send_command(&self, command: Command) -> Result<Response> {
-        let url: String = format!("https://{}:{}{}", self.ip_addr, self.port, command.endpoint(&self.dev_type));
+        let url: String = format!(
+            "https://{}:{}{}",
+            self.ip_addr,
+            self.port,
+            command.endpoint(&self.dev_type)
+        );
 
         println!("{:#?}", serde_json::to_string(&command).unwrap());
 
         // Start building request
         let mut req = match command.request_type() {
-            RequestType::Get => {
-                self.client.get(url)
-            },
+            RequestType::Get => self.client.get(url),
             RequestType::Put => {
-                self.client.put(url)
-                // Add body for PUT commands
-                .body(
-                    serde_json::to_string(&command).unwrap()
-                )
-            },
+                self.client
+                    .put(url)
+                    // Add body for PUT commands
+                    .body(serde_json::to_string(&command).unwrap())
+            }
         };
 
         // Add content type header
@@ -470,53 +510,54 @@ impl Device {
         match &self.auth_token {
             Some(token) => {
                 req = req.header("Auth", token.to_string());
-            },
-            None => {},
+            }
+            None => {}
         }
 
         // Send command
         let res = req.send().await?;
 
+        let response = res.text().await.unwrap();
+        println!("{:#?}", response);
+        let json: serde_json::Value = serde_json::from_str(&response).unwrap();
+
         // Process response
-        response::process(res.json().await?)
+        response::process(json)
     }
 }
 
-#[derive(Debug)]
-struct DeviceInfo {
-    name: String,
-    manufacturer: String,
-    model: String,
-    ip_addr: String,
-    port: u16,
-    uuid: String,
-    auth_token: Option<String>
-}
+// #[derive(Debug)]
+// struct DeviceInfo {
+//     name: String,
+//     manufacturer: String,
+//     model: String,
+//     ip_addr: String,
+//     port: u16,
+//     auth_token: Option<String>
+// }
 
-impl DeviceInfo {
-    fn build(name: String,manufacturer: String,model: String,ip_addr: String,uuid: String) -> Self {
-        Self {
-            name,
-            manufacturer,
-            model,
-            ip_addr,
-            // TO-DO support port 8000
-            port: 7345,
-            uuid,
-            auth_token: None,
-        }
-    }
-}
+// impl DeviceInfo {
+//     fn new(name: String, manufacturer: String, model: String, ip_addr: String) -> Self {
+//         Self {
+//             name,
+//             manufacturer,
+//             model,
+//             ip_addr,
+//             port: 7345,
+//             auth_token: None,
+//         }
+//     }
+// }
 
 #[cfg(test)]
 impl PartialEq for Device {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
-        && self.manufacturer == other.manufacturer
-        && self.model == other.model
-        && self.ip_addr == other.ip_addr
-        && self.port == other.port
-        && self.uuid == other.uuid
-        && self.auth_token == other.auth_token
+            && self.manufacturer == other.manufacturer
+            && self.model == other.model
+            && self.ip_addr == other.ip_addr
+            && self.port == other.port
+            && self.uuid == other.uuid
+            && self.auth_token == other.auth_token
     }
 }
