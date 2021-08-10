@@ -50,6 +50,7 @@ impl<'de> Deserialize<'de> for DeviceInfo {
 
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+/// Input on the device
 pub struct Input {
     name: String,
     #[serde(rename(deserialize = "VALUE"))]
@@ -58,12 +59,13 @@ pub struct Input {
     hashval: u32,
 }
 
-// TODO: Document
 impl Input {
+    /// Input's name
     pub fn name(&self) -> String {
         self.name.clone()
     }
 
+    /// Input's "friendly" name
     pub fn friendly_name(&self) -> String {
         self.friendly_name.clone()
     }
