@@ -62,6 +62,24 @@ pub enum Error {
     Other(String),
 }
 
+impl Error {
+    pub fn is_reqwest(&self) -> bool {
+        matches!(self, Error::Reqwest(_))
+    }
+
+    pub fn is_serde(&self) -> bool {
+        matches!(self, Error::Json(_))
+    }
+
+    pub fn is_std(&self) -> bool {
+        matches!(self, Error::StdIO(_))
+    }
+
+    pub fn is_device(&self) -> bool {
+        !(self.is_reqwest() || self.is_serde() || self.is_std())
+    }
+}
+
 impl From<reqwest::Error> for Error {
     fn from(e: reqwest::Error) -> Error {
         Error::Reqwest(e)
@@ -80,8 +98,8 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<std::string::String> for Error {
-    fn from(e: std::string::String) -> Error {
+impl From<String> for Error {
+    fn from(e: String) -> Error {
         Error::Other(e)
     }
 }
@@ -91,78 +109,77 @@ impl std::fmt::Display for Error {
         match self {
             Error::InvalidParameter => {
                 write!(f, "Invalid Parameter - probably means this api needs to be modified to work with your firmware")
-            },
+            }
             Error::UriNotFound => {
                 write!(f, "URI not found - probably means this api needs to be modified to work with your firmware")
-            },
+            }
             Error::MaxChallengesExceeded => {
                 write!(f, "Too many failed pair attempts")
-            },
+            }
             Error::PairingDenied => {
                 write!(f, "Incorrect pin")
-            },
+            }
             Error::ValueOutOfRange => {
                 write!(f, "Pin out of range")
-            },
+            }
             Error::ChallengeIncorrect => {
                 write!(f, "Incorrect challenge")
-            },
+            }
             Error::Blocked => {
                 write!(f, "Command was blocked")
-            },
+            }
             Error::Failure => {
                 write!(f, "Unknown command failure")
-            },
+            }
             Error::Aborted => {
                 write!(f, "Unknown abort")
-            },
+            }
             Error::Busy => {
                 write!(f, "Device is busy")
-            },
+            }
             Error::RequiresPairing => {
                 write!(f, "Device requires pairing")
-            },
+            }
             Error::RequiresSystemPin => {
                 write!(f, "Device requires system pin")
-            },
+            }
             Error::RequiresNewSystemPin => {
                 write!(f, "Device requires new system pin")
-            },
+            }
             Error::NetWifiNeedsValidSSID => {
                 write!(f, "Wifi needs SSID")
-            },
+            }
             Error::NetWifiAlreadyConnected => {
                 write!(f, "Wifi already connected")
-            },
+            }
             Error::NetWifiMissingPassword => {
                 write!(f, "Wifi needs password")
-            },
+            }
             Error::NetWifiNotExisted => {
                 write!(f, "Wifi network does not exist")
-            },
+            }
             Error::NetWifiAuthRejected => {
                 write!(f, "Wifi authentication rejected")
-            },
+            }
             Error::NetWifiConnectTimeout => {
                 write!(f, "Wifi connection timeout")
-            },
+            }
             Error::NetWifiConnectAborted => {
                 write!(f, "Wifi connection aborted")
-            },
+            }
             Error::NetWifiConnection => {
                 write!(f, "Wifi connection error")
-            },
+            }
             Error::NetIPManualConfig => {
                 write!(f, "IP config error")
-            },
+            }
             Error::NetIPDHCPFailed => {
                 write!(f, "DHCP failure")
-            },
+            }
             Error::NetUnknown => {
                 write!(f, "Unknown Network Error")
-            },
-            Error::Reqwest(_) | Error::Json(_)
-            | Error::StdIO(_) | Error::Other(_)=> {
+            }
+            Error::Reqwest(_) | Error::Json(_) | Error::StdIO(_) | Error::Other(_) => {
                 write!(f, "{}", self)
             }
         }

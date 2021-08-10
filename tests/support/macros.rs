@@ -1,8 +1,8 @@
-#[macro_use]
 macro_rules! device_desc {
     ($name:expr, $model:expr, $uuid:expr) => {
-        format!(indoc::indoc! {
-            "<?xml version=\"1.0\"?>
+        format!(
+            indoc::indoc! {
+                "<?xml version=\"1.0\"?>
             <root xmlns=\"urn:schemas-upnp-org:device-1-0\">
                 <specVersion>
                     <major>1</major>
@@ -17,13 +17,12 @@ macro_rules! device_desc {
                     <UDN>uuid:{}</UDN>
                 </device>
             </root>"
-        },
-        $name, $model, $uuid
+            },
+            $name, $model, $uuid
         )
     };
 }
 
-#[macro_use]
 macro_rules! status {
     ($result:expr) => {
         format!(
