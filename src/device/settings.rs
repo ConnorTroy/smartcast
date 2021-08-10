@@ -1,4 +1,4 @@
-use super::{CommandDetail, Device, Error, Response, Result};
+use super::{CommandDetail, Device, Response, Result};
 
 use serde::{de, Deserialize};
 use serde_json::Value;
@@ -23,16 +23,17 @@ impl EndpointBase {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// Object types to which [`SubSetting`] corresponds
 pub enum SettingsType {
     /// Slider which has a max/min value. See [`SliderInfo`] for more details.
     Slider,
-    /// List of possible values which should be displayed. Use [elements()]() to get list data.
+    /// List of possible values which should be displayed. Use [`elements()`](./struct.SubSetting.html/#method.elements) to get list data.
     List,
     /// Mutable value
     Value,
     /// Menu containing more [`SubSetting`]s
     Menu,
-    /// List of possible values which should be displayed. Use [elements()]() to get list data.
+    /// List of possible values which should be displayed. Use [`elements()`](./struct.SubSetting.html/#method.elements) to get list data.
     XList,
     #[doc(hidden)]
     Other(String),
@@ -84,6 +85,7 @@ pub struct SliderInfo {
 /// Because every device has a different settings layout, we need to propagate through them at runtime.
 /// You can get the root of a [`Device`]s settings using the [`settings()`](./struct.Device.html/#method.settings) method.
 /// Propagate through the settings using [`expand()`](./struct.SubSetting.html/#method.expand).
+///
 /// A `SubSetting` [`SettingsType`] can correspond any one of the following:
 /// * `Menu` - an object which contains settings or more menus
 /// * `Value` - a setting with a set value
