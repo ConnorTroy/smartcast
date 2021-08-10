@@ -10,7 +10,7 @@ mod settings;
 
 pub use self::info::Input;
 pub use self::remote::{Button, ButtonEvent};
-pub use self::settings::{EndpointBase, ObjectType, SliderInfo, SubSetting};
+pub use self::settings::{EndpointBase, SettingsType, SliderInfo, SubSetting};
 
 use self::command::{Command, CommandDetail};
 use self::info::DeviceInfo;
@@ -278,7 +278,7 @@ impl Device {
     /// # use std::io::stdin;
     /// #
     /// # async fn pair() -> Result<String, smartcast::Error> {
-    /// let mut dev = Device::from_ip("192.168.0.14").await.unwrap();
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
     ///
     /// let client_name = "My App Name";
     /// let client_id = "myapp-rs";
@@ -288,7 +288,7 @@ impl Device {
     ///
     /// // Input pin displayed on screen
     /// let mut pin = String::new();
-    /// stdin().read_line(&mut pin).unwrap();
+    /// stdin().read_line(&mut pin);
     ///
     /// // Finish Pairing
     /// let auth_token = dev.finish_pair(pairing_data, &pin).await?;
@@ -329,7 +329,7 @@ impl Device {
     /// # use smartcast::Device;
     /// #
     /// # async fn pair_cancel() -> Result<(), smartcast::Error> {
-    /// let mut dev = Device::from_ip("192.168.0.14").await.unwrap();
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
     ///
     /// let client_name = "My App Name";
     /// let client_id = "myapp-rs";
@@ -370,7 +370,7 @@ impl Device {
     /// use smartcast::{Device, ButtonEvent, Button};
     ///
     /// # async fn power_on_volume_up() -> Result<Device, smartcast::Error> {
-    /// let mut dev = Device::from_ip("192.168.0.14").await.unwrap();
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
     /// dev.set_auth_token("Z2zscc1udl");
     ///
     /// // Power on device
@@ -416,7 +416,7 @@ impl Device {
     /// # use smartcast::Device;
     /// #
     /// # async fn change_input() -> Result<(), smartcast::Error> {
-    /// let mut dev = Device::from_ip("192.168.0.14").await.unwrap();
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
     /// dev.set_auth_token("Z2zscc1udl");
     ///
     /// println!("{}", dev.current_input().await?.friendly_name());
@@ -452,7 +452,7 @@ impl Device {
         Ok(())
     }
 
-    // TODO: Document
+    /// Get the root of the device's [`Settings`](SubSetting).
     pub async fn settings(&self) -> Result<Vec<SubSetting>> {
         settings::root(self.clone()).await
     }
