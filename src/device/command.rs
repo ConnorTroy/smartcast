@@ -1,14 +1,34 @@
-use super::{SubSetting, UrlBase};
+use super::EndpointBase;
 
-use serde::ser::{Serialize, Serializer, SerializeStruct};
+use super::{response, ButtonEvent, Device, Response, Result};
 
+use serde::ser::{Serialize, SerializeStruct, Serializer};
+use serde_json::Value;
 
-// #[allow(unused)]
-pub enum Command {
-    StartPairing{client_name: String, client_id: String},
-    FinishPairing{client_id: String, pairing_token: u32, challenge: u32, response_value: String},
-    CancelPairing{client_id: String, pairing_token: u32, challenge: u32},
+use std::result::Result as StdResult;
 
+#[derive(Debug, Copy, Clone)]
+pub enum RequestType {
+    Get,
+    Put,
+}
+
+pub enum CommandDetail {
+    StartPairing {
+        client_name: String,
+        client_id: String,
+    },
+    FinishPairing {
+        client_id: String,
+        pairing_token: u32,
+        challenge: u32,
+        response_value: String,
+    },
+    CancelPairing {
+        client_id: String,
+        pairing_token: u32,
+        challenge: u32,
+    },
     GetPowerState,
     GetDeviceInfo,
     RemoteButtonPress(Vec<ButtonEvent>),
@@ -20,37 +40,20 @@ pub enum Command {
     GetVersionAlt,
     GetCurrentInput,
     GetInputList,
-    ChangeInput{name: String, hashval: u32},
+    ChangeInput {
+        name: String,
+        hashval: u32,
+    },
     GetCurrentApp,
-    LaunchApp(String),
-    ReadSettings(SubSetting),
-    ReadStaticSettings(SubSetting),
-    // WriteSettings, // To-do (Brick warning)
+    LaunchApp(Value),
+    ReadSettings(EndpointBase, String),
+    // WriteSettings, // TODO (Brick warning)
+    Custom(RequestType, String, Option<Value>),
 }
 
-pub enum RequestType {
-    Get,
-    Put,
-}
-
-#[derive(Debug, Clone)]
-pub enum DeviceType {
-    TV,
-    SoundBar,
-}
-
-impl DeviceType {
-    pub fn endpoint(&self) -> String {
-        match self {
-            Self::TV        => "tv_settings",
-            Self::SoundBar  => "audio_settings",
-        }.into()
-    }
-}
-
-impl Command {
+impl CommandDetail {
     /// Get the endpoint of the command
-    pub fn endpoint(&self, device_type: &DeviceType) -> String {
+    pub fn endpoint(&self, settings_root: String) -> String {
         match self {
             Self::StartPairing{..}                  => "/pairing/start".into(),
             Self::FinishPairing{..}                 => "/pairing/pair".into(),
@@ -58,34 +61,33 @@ impl Command {
             Self::GetPowerState                     => "/state/device/power_mode".into(),
             Self::GetDeviceInfo                     => "/state/device/deviceinfo".into(),
             Self::RemoteButtonPress{..}             => "/key_command/".into(),
-            Self::GetESN                            => format!("/menu_native/dynamic/{}/system/system_information/uli_information/esn", device_type.endpoint()),
-            Self::GetSerial                         => format!("/menu_native/dynamic/{}/system/system_information/tv_information/serial_number", device_type.endpoint()),
-            Self::GetVersion                        => format!("/menu_native/dynamic/{}/system/system_information/tv_information/version", device_type.endpoint()),
-            Self::GetESNAlt                         => format!("/menu_native/dynamic/{}/admin_and_privacy/system_information/uli_information/esn", device_type.endpoint()),
-            Self::GetSerialAlt                      => format!("/menu_native/dynamic/{}/admin_and_privacy/system_information/tv_information/serial_number", device_type.endpoint()),
-            Self::GetVersionAlt                     => format!("/menu_native/dynamic/{}/admin_and_privacy/system_information/tv_information/version", device_type.endpoint()),
-            Self::GetCurrentInput                   => format!("/menu_native/dynamic/{}/devices/current_input", device_type.endpoint()),
-            Self::GetInputList                      => format!("/menu_native/dynamic/{}/devices/name_input", device_type.endpoint()),
-            Self::ChangeInput{..}                   => format!("/menu_native/dynamic/{}/devices/current_input", device_type.endpoint()),
+            Self::GetESN                            => format!("/menu_native/dynamic/{}/system/system_information/uli_information/esn", settings_root),
+            Self::GetSerial                         => format!("/menu_native/dynamic/{}/system/system_information/tv_information/serial_number", settings_root),
+            Self::GetVersion                        => format!("/menu_native/dynamic/{}/system/system_information/tv_information/version", settings_root),
+            Self::GetESNAlt                         => format!("/menu_native/dynamic/{}/admin_and_privacy/system_information/uli_information/esn", settings_root),
+            Self::GetSerialAlt                      => format!("/menu_native/dynamic/{}/admin_and_privacy/system_information/tv_information/serial_number", settings_root),
+            Self::GetVersionAlt                     => format!("/menu_native/dynamic/{}/admin_and_privacy/system_information/tv_information/version", settings_root),
+            Self::GetCurrentInput                   => format!("/menu_native/dynamic/{}/devices/current_input", settings_root),
+            Self::GetInputList                      => format!("/menu_native/dynamic/{}/devices/name_input", settings_root),
+            Self::ChangeInput{..}                   => format!("/menu_native/dynamic/{}/devices/current_input", settings_root),
             Self::GetCurrentApp                     => "/app/current".into(),
             Self::LaunchApp(_)                      => "/app/launch".into(),
-            Self::ReadSettings(subsetting)          => subsetting.endpoint(UrlBase::Dynamic, device_type),
-            Self::ReadStaticSettings(subsetting)    => subsetting.endpoint(UrlBase::Static, device_type),
+            Self::ReadSettings(base, endpoint)      => base.as_str() + endpoint,
             // Self::WriteSettings             => "/menu_native/dynamic/tv_settings/SETTINGS_CNAME/ITEMS_CNAME",
+            Self::Custom(_, endpoint, _)           => endpoint.into(),
         }
     }
 
     /// Get the request type of the command
     pub fn request_type(&self) -> RequestType {
         match self {
-            Self::StartPairing{..}
-            | Self::FinishPairing{..}
-            | Self::CancelPairing{..}
-            | Self::RemoteButtonPress{..}
-            | Self::ChangeInput{..}
-            | Self::LaunchApp(_)       => RequestType::Put,
+            Self::StartPairing { .. }
+            | Self::FinishPairing { .. }
+            | Self::CancelPairing { .. }
+            | Self::RemoteButtonPress { .. }
+            | Self::ChangeInput { .. }
+            | Self::LaunchApp(_) => RequestType::Put,
             // Self::WriteSettings     => RequestType::Put,
-
             Self::GetPowerState
             | Self::GetDeviceInfo
             | Self::GetESN
@@ -97,274 +99,132 @@ impl Command {
             | Self::GetCurrentInput
             | Self::GetInputList
             | Self::GetCurrentApp
-            | Self::ReadSettings(_)
-            | Self::ReadStaticSettings(_) => RequestType::Get,
+            | Self::ReadSettings(_, _) => RequestType::Get,
+            Self::Custom(req_type, _, _) => *req_type,
         }
+    }
+}
+
+pub struct Command {
+    detail: CommandDetail,
+    endpoint: String,
+    device: Device,
+}
+
+impl Command {
+    pub fn new(device: Device, detail: CommandDetail) -> Self {
+        let endpoint = detail.endpoint(device.settings_root());
+        Self {
+            detail,
+            endpoint,
+            device,
+        }
+    }
+
+    pub async fn send(self) -> Result<Response> {
+        let device = self.device.clone();
+        let client = device.inner.client.clone();
+
+        let url: String = format!(
+            "https://{}:{}{}",
+            device.ip(),
+            device.port(),
+            self.detail.endpoint(device.settings_root())
+        );
+
+        let res = {
+            // Request building
+            let req = match self.detail.request_type() {
+                RequestType::Get => client.get(url),
+                RequestType::Put => {
+                    client
+                        .put(url)
+                        // Add content type header
+                        .header("Content-Type", "application/json")
+                        // Add body for PUT commands
+                        .body(serde_json::to_string(&self).unwrap())
+                }
+            };
+            // Add auth token header
+            if let Some(token) = &device.auth_token() {
+                req.header("Auth", token.to_string())
+            } else {
+                req
+            }
+        }
+        // Request send
+        .send()
+        .await?
+        // Get response as text because some device errors do not follow the standard format
+        .text()
+        .await?;
+
+        // Process response
+        response::process(res)
     }
 }
 
 impl Serialize for Command {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
     where
-        S: Serializer
+        S: Serializer,
     {
-        match self {
-            Self::StartPairing{client_name, client_id} => {
-                let mut command = serializer.serialize_struct("", 2)?;
-                command.serialize_field("DEVICE_NAME",  client_name)?;
-                command.serialize_field("DEVICE_ID",    client_id)?;
+        let mut command = serializer.serialize_struct("", 5)?;
+        command.serialize_field("_url", &self.endpoint)?;
+        match &self.detail {
+            CommandDetail::StartPairing {
+                client_name,
+                client_id,
+            } => {
+                command.serialize_field("DEVICE_NAME", client_name)?;
+                command.serialize_field("DEVICE_ID", client_id)?;
                 command.end()
-            },
-            Self::CancelPairing{client_id, pairing_token, challenge} => {
-                let mut command = serializer.serialize_struct("", 4)?;
-                command.serialize_field("DEVICE_ID",            client_id)?;
-                command.serialize_field("CHALLENGE_TYPE",       challenge)?;
-                command.serialize_field("RESPONSE_VALUE",       "1111")?;
-                command.serialize_field("PAIRING_REQ_TOKEN",    pairing_token)?;
+            }
+            CommandDetail::CancelPairing {
+                client_id,
+                pairing_token,
+                challenge,
+            } => {
+                command.serialize_field("DEVICE_ID", client_id)?;
+                command.serialize_field("CHALLENGE_TYPE", challenge)?;
+                command.serialize_field("RESPONSE_VALUE", "1111")?;
+                command.serialize_field("PAIRING_REQ_TOKEN", pairing_token)?;
                 command.end()
-            },
-            Self::FinishPairing{client_id, pairing_token, challenge, response_value} => {
-                let mut command = serializer.serialize_struct("", 4)?;
-                command.serialize_field("DEVICE_ID",            client_id)?;
-                command.serialize_field("CHALLENGE_TYPE",       challenge)?;
-                command.serialize_field("RESPONSE_VALUE",       response_value)?;
-                command.serialize_field("PAIRING_REQ_TOKEN",    pairing_token)?;
+            }
+            CommandDetail::FinishPairing {
+                client_id,
+                pairing_token,
+                challenge,
+                response_value,
+            } => {
+                command.serialize_field("DEVICE_ID", client_id)?;
+                command.serialize_field("CHALLENGE_TYPE", challenge)?;
+                command.serialize_field("RESPONSE_VALUE", response_value)?;
+                command.serialize_field("PAIRING_REQ_TOKEN", pairing_token)?;
                 command.end()
-            },
-            Self::RemoteButtonPress(button_event_vec) => {
-                let mut command = serializer.serialize_struct("", 1)?;
+            }
+            CommandDetail::RemoteButtonPress(button_event_vec) => {
                 command.serialize_field("KEYLIST", button_event_vec)?;
                 command.end()
-            },
-            Self::ChangeInput{name, hashval} => {
-                let mut command = serializer.serialize_struct("", 3)?;
-                command.serialize_field("REQUEST",  "MODIFY")?;
-                command.serialize_field("VALUE",    name)?;
-                command.serialize_field("HASHVAL",  hashval)?;
+            }
+            CommandDetail::ChangeInput { name, hashval } => {
+                command.serialize_field("REQUEST", "MODIFY")?;
+                command.serialize_field("VALUE", name)?;
+                command.serialize_field("HASHVAL", hashval)?;
                 command.end()
-            },
-            // TO-DO:
-            // Self::LaunchApp => {
+            }
+            CommandDetail::LaunchApp(payload) => {
+                command.serialize_field("VALUE", payload)?;
+                command.end()
+            }
+            // TODO:
+            // CommandDetail::WriteSettings => {
             //     let mut command = serializer.serialize_struct("", )?;
             //     command.serialize_field("", )?;
             //     command.serialize_field("", )?;
             //     command.end()
             // },
-            // Self::WriteSettings => {
-            //     let mut command = serializer.serialize_struct("", )?;
-            //     command.serialize_field("", )?;
-            //     command.serialize_field("", )?;
-            //     command.end()
-            // },
-            _ => serializer.serialize_struct("", 0)?.end()
-        }
-    }
-}
-
-/// Button interactions used in [`button_event()`](./struct.Device.html/#method.button_event)
-///
-/// Must include a [`Button`] to specify what you want to interact with
-pub enum ButtonEvent {
-    /// Hold the button down
-    KeyDown(Button),
-    /// Release the button after a hold
-    KeyUp(Button),
-    /// Click the button once
-    KeyPress(Button),
-}
-
-impl ButtonEvent {
-    fn button(&self) -> Button {
-        match self {
-            Self::KeyDown(button)
-            | Self::KeyUp(button)
-            | Self::KeyPress(button) => *button
-        }
-    }
-}
-
-impl ToString for ButtonEvent {
-    fn to_string(&self) -> String {
-        match self {
-            Self::KeyDown(_)    => "KEYDOWN",
-            Self::KeyUp(_)      => "KEYUP",
-            Self::KeyPress(_)   => "KEYPRESS",
-        }.to_string()
-    }
-}
-
-impl From<ButtonEvent> for Vec<ButtonEvent> {
-    fn from(event: ButtonEvent) -> Vec<ButtonEvent> {
-        vec![event]
-    }
-}
-
-impl Serialize for ButtonEvent{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer
-    {
-        let mut key_action = serializer.serialize_struct("", 3)?;
-        let button = self.button();
-        key_action.serialize_field("CODESET", &button.code_set())?;
-        key_action.serialize_field("CODE",    &button.code())?;
-        key_action.serialize_field("ACTION",  &self.to_string())?;
-        key_action.end()
-    }
-}
-
-/// "Buttons" you can interact with using [`ButtonEvent`]
-#[allow(unused)]
-#[derive(Clone, Copy)]
-pub enum Button {
-    /// Seek Forward
-    SeekFwd,
-    /// Seek Back
-    SeekBack,
-    /// Pause
-    Pause,
-    /// Play
-    Play,
-    /// Directional pad down
-    Down,
-    /// Directional pad left
-    Left,
-    /// Directional pad up
-    Up,
-    /// Directional pad right
-    Right,
-    /// Ok button
-    Ok,
-    /// Back
-    Back,
-    /// Smartcast button
-    SmartCast,
-    /// Toggle Closed Captioning
-    CCToggle,
-    /// Info
-    Info,
-    /// Menu
-    Menu,
-    /// Home
-    Home,
-    /// Volume down
-    VolumeDown,
-    /// Volume up
-    VolumeUp,
-    /// Disable mute
-    MuteOff,
-    /// Enable mute
-    MuteOn,
-    /// Toggle mute
-    MuteToggle,
-    /// Picture mode
-    PicMode,
-    /// Picture size
-    PicSize,
-    /// Next input
-    InputNext,
-    /// Channel down
-    ChannelDown,
-    /// Channel up
-    ChannelUp,
-    /// Previous channel
-    ChannelPrev,
-    /// Exit
-    Exit,
-    /// Power off
-    PowerOff,
-    /// Power on
-    PowerOn,
-    /// Toggle power
-    PowerToggle,
-}
-
-impl Button {
-
-    fn code_set(&self) -> u8 {
-        match self {
-            Self::SeekFwd
-            | Self::SeekBack
-            | Self::Pause
-            | Self::Play        => 2,
-
-            Self::Down
-            | Self::Left
-            | Self::Up
-            | Self::Right
-            | Self::Ok          => 3,
-
-            Self::Back
-            | Self::SmartCast
-            | Self::CCToggle
-            | Self::Info
-            | Self::Menu
-            | Self::Home        => 4,
-
-            Self::VolumeDown
-            | Self::VolumeUp
-            | Self::MuteOff
-            | Self::MuteOn
-            | Self::MuteToggle   => 5,
-
-            Self::PicMode
-            | Self::PicSize     => 6,
-
-            Self::InputNext     => 7,
-
-            Self::ChannelDown
-            | Self::ChannelUp
-            | Self::ChannelPrev  => 8,
-
-            Self::Exit          => 9,
-
-            Self::PowerOff
-            | Self::PowerOn
-            | Self::PowerToggle  => 11,
-        }
-    }
-
-    fn code(&self) -> u8 {
-        match self {
-            Self::SeekFwd => 0,
-            Self::SeekBack => 1,
-            Self::Pause => 2,
-            Self::Play => 3,
-
-            Self::Down => 0, //
-            Self::Left => 1, //
-            // TO-DO: maybe figure out how this has changed
-            Self::Up => 8, // or 3
-            Self::Right => 7, // or 5
-            Self::Ok => 2, //
-
-            Self::Back => 0, //
-            Self::SmartCast => 3,//
-            Self::CCToggle => 4,
-            Self::Info => 6, //
-            Self::Menu => 8, //
-            Self::Home => 15, //
-
-            Self::VolumeDown => 0, //
-            Self::VolumeUp => 1, //
-            Self::MuteOff => 2, //
-            Self::MuteOn => 3, //
-            Self::MuteToggle => 4, //
-
-            Self::PicMode => 0, //
-            Self::PicSize => 2, //
-
-            Self::InputNext => 1, //
-
-            Self::ChannelDown => 0,
-            Self::ChannelUp => 1,
-            Self::ChannelPrev => 2,
-
-            Self::Exit => 0, //
-
-            Self::PowerOff => 0, //
-            Self::PowerOn => 1, //
-            Self::PowerToggle => 2, //
+            _ => command.end(),
         }
     }
 }

@@ -2,37 +2,30 @@ use super::constant;
 use super::discover::{ssdp, uaudp_followup};
 use super::error::{Error, Result};
 
-mod apps;
 mod command;
-mod input;
+mod info;
+mod remote;
 mod response;
-mod setting;
+mod settings;
 
-pub use self::apps::App;
-pub use self::command::{Button, ButtonEvent, DeviceType};
-pub use self::input::Input;
-pub use self::setting::{ObjectType, SubSetting, UrlBase};
+pub use self::info::Input;
+pub use self::remote::{Button, ButtonEvent};
+pub use self::settings::{EndpointBase, ObjectType, SliderInfo, SubSetting};
 
-use self::apps::fetch_apps;
-use self::command::{Command, RequestType};
+use self::command::{Command, CommandDetail};
+use self::info::DeviceInfo;
 use self::response::Response;
-
 use reqwest::Client;
+
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::time::Duration;
 
 /// A Vizio Device
 // TODO: Document
 #[derive(Debug, Clone)]
 pub struct Device {
-    name: String,
-    manufacturer: String,
-    model: String,
-    dev_type: DeviceType,
-    ip_addr: String,
-    port: u16,
-    uuid: String,
-    auth_token: Option<String>,
-    client: Client,
+    inner: Rc<DeviceRef>,
 }
 
 impl Device {
@@ -42,7 +35,7 @@ impl Device {
         model: S,
         ip_addr: S,
         uuid: S,
-    ) -> Result<Device> {
+    ) -> Result<Self> {
         // Workaround for testing issues on loopback
         let ip_addr = match ip_addr.into().as_str() {
             "127.0.0.1" => "localhost",
@@ -50,53 +43,67 @@ impl Device {
         }
         .to_string();
 
-        let mut device = Device {
-            name: name.into(),
-            manufacturer: manufacturer.into(),
-            model: model.into(),
-            dev_type: DeviceType::TV,
-            ip_addr,
-            port: 0,
-            uuid: uuid.into(),
-            auth_token: None,
-            client: Self::new_client(),
+        let device = Self {
+            inner: Rc::new(DeviceRef {
+                name: name.into(),
+                manufacturer: manufacturer.into(),
+                model: model.into(),
+                settings_root: RefCell::new(String::new()),
+                ip_addr,
+                port: Cell::new(0),
+                uuid: uuid.into(),
+                auth_token: RefCell::new(None),
+                client: reqwest::Client::builder()
+                    .timeout(Duration::from_secs(constant::DEFAULT_TIMEOUT))
+                    .danger_accept_invalid_certs(true)
+                    .build()
+                    .expect("Unable to build Reqwest Client"),
+            }),
         };
 
-        // Check port options
-        device.find_port().await?;
-
-        Ok(device)
-    }
-
-    fn new_client() -> Client {
-        reqwest::Client::builder()
-            .timeout(Duration::from_secs(constant::DEFAULT_TIMEOUT))
-            .danger_accept_invalid_certs(true)
-            .build()
-            .expect("Unable to build Reqwest Client")
+        device.initialize().await
     }
 
     #[cfg(not(test))]
-    async fn find_port(&mut self) -> Result<Response> {
+    async fn initialize(self) -> Result<Self> {
+        // Check port options
+        self.find_port().await?;
+
+        // Try to figure out device type
+        self.set_settings_root().await?;
+
+        Ok(self)
+    }
+
+    #[cfg(not(test))]
+    async fn find_port(&self) -> Result<()> {
         let mut iter = constant::PORT_OPTIONS.iter().peekable();
 
-        let res = loop {
+        loop {
             if let Some(port) = iter.next() {
-                self.port = *port;
-                let res = self.send_command(Command::GetDeviceInfo).await;
-                if res.is_ok() || iter.peek().is_none() {
-                    break res;
+                self.inner.port.replace(*port);
+                let res = self.device_info().await;
+                match res {
+                    Err(Error::Reqwest(e)) if e.is_connect() && iter.peek().is_some() => {}
+                    Ok(_) => return Ok(()),
+                    Err(e) => return Err(e),
                 }
             } else {
                 panic!("Reached end of port iterator");
             }
-        };
-        res
+        }
+    }
+
+    #[cfg(not(test))]
+    async fn set_settings_root(&self) -> Result<()> {
+        let device_info = self.device_info().await?;
+        self.inner.settings_root.replace(device_info.settings_root);
+        Ok(())
     }
 
     #[cfg(test)]
-    async fn find_port(&mut self) -> Result<()> {
-        Ok(())
+    async fn initialize(self) -> Result<Self> {
+        Ok(self)
     }
 
     /// Connect to a SmartCast device from the device's IP Address
@@ -159,83 +166,109 @@ impl Device {
 
     /// Get device's 'friendly' name
     pub fn name(&self) -> String {
-        self.name.clone()
+        self.inner.name.clone()
     }
 
     /// Get device's model name
     pub fn model_name(&self) -> String {
-        self.model.clone()
-    }
-
-    #[cfg(test)]
-    pub fn manufacturer(&self) -> String {
-        self.manufacturer.clone()
+        self.inner.model.clone()
     }
 
     /// Get device's local IP
     pub fn ip(&self) -> String {
-        self.ip_addr.clone()
+        self.inner.ip_addr.clone()
     }
 
-    /// Get device's port
+    /// Get device's API port
     pub fn port(&self) -> u16 {
-        self.port
+        self.inner.port.get()
     }
 
     /// Get device's UUID
     pub fn uuid(&self) -> String {
-        self.uuid.clone()
+        self.inner.uuid.clone()
+    }
+
+    // TODO
+    pub async fn esn(&self) -> Result<String> {
+        let res = match self.send_command(CommandDetail::GetESN).await {
+            Ok(res) => res,
+            Err(Error::UriNotFound) => self.send_command(CommandDetail::GetESNAlt).await?,
+            Err(e) => return Err(e),
+        };
+        Ok(res.esn()?)
+    }
+
+    // TODO
+    pub async fn serial(&self) -> Result<String> {
+        let res = match self.send_command(CommandDetail::GetSerial).await {
+            Ok(res) => res,
+            Err(Error::UriNotFound) => self.send_command(CommandDetail::GetSerialAlt).await?,
+            Err(e) => return Err(e),
+        };
+        Ok(res.serial()?)
+    }
+
+    // TODO
+    pub async fn version(&self) -> Result<String> {
+        let res = match self.send_command(CommandDetail::GetVersion).await {
+            Ok(res) => res,
+            Err(Error::UriNotFound) => self.send_command(CommandDetail::GetVersionAlt).await?,
+            Err(e) => return Err(e),
+        };
+        Ok(res.fw_version()?)
     }
 
     /// If set, get the client's auth token for the device
     pub fn auth_token(&self) -> Option<String> {
-        self.auth_token.clone()
+        self.inner.auth_token.borrow().clone()
     }
 
     /// If previously paired, you may manually set the client's auth token for the device.
     pub async fn set_auth_token<S: Into<String>>(&mut self, token: S) -> Result<()> {
-        let old_token = self.auth_token.clone();
-        self.auth_token = Some(token.into());
+        let old_token = self.auth_token();
+        self.inner.auth_token.replace(Some(token.into()));
 
         // Send a command which requires pairing to test token
-        match self
-            .send_command(Command::ReadSettings(SubSetting::default()))
-            .await
-        {
-            Ok(_) => Ok(()),
+        match self.current_input().await {
+            Ok(_) => {}
             Err(e) => {
-                self.auth_token = old_token;
-                Err(e)
+                self.inner.auth_token.replace(old_token);
+                return Err(e);
             }
         }
+        Ok(())
     }
 
     /// Begin the pairing process
     ///
-    /// Upon calling this method, the device will enter pairing mode.
-    /// It may not be necessary to pair your device if it is a soundbar.
+    /// The device will enter pairing mode upon calling this method with a `Client Name` which will be displayed
+    /// in the device's "Mobile Devices" page, along with a `Client ID` which will be used to identify the client.
     ///
-    /// This method returns a `Pairing Token` and a `Challenge Type` which
+    /// This method returns `pairing data` consisting of a `Pairing Token`, a `Challenge Type`, and the `Client ID` which
     /// will need to be passed into [`finish_pair()`](./struct.Device.html/#method.finish_pair)
-    /// along with the pin displayed on the device screen.
+    /// or [`cancel_pair()`](./struct.Device.html/#method.cancel_pair).
+    /// Note: It may not be necessary to pair your device if it is a soundbar.
     pub async fn begin_pair<S: Into<String>>(
         &self,
         client_name: S,
         client_id: S,
-    ) -> Result<(u32, u32)> {
+    ) -> Result<(u32, u32, String)> {
+        let client_id: String = client_id.into();
         let res = self
-            .send_command(Command::StartPairing {
+            .send_command(CommandDetail::StartPairing {
                 client_name: client_name.into(),
-                client_id: client_id.into(),
+                client_id: client_id.clone(),
             })
             .await?;
-        Ok((res.pairing_token()?, res.challenge()?))
+        let (token, challenge) = res.pairing()?;
+        Ok((token, challenge, client_id))
     }
 
     /// Finish the pairing process
     ///
-    /// Upon calling this method with `Client Name`, `Pairing Token` and `Challenge Type` returned from
-    /// [`begin_pair()`](./struct.Device.html/#method.begin_pair), and the pin displayed
+    /// Upon calling this method with the `pairing data` returned from
+    /// [`begin_pair()`](./struct.Device.html/#method.begin_pair) and the pin displayed
     /// by the device, the pairing process will end and the client will be paired.
     ///
     /// # Example
@@ -251,14 +284,14 @@ impl Device {
     /// let client_id = "myapp-rs";
     ///
     /// // Begin Pairing
-    /// let (pairing_token, challenge) = dev.begin_pair(client_name, client_id).await?;
+    /// let pairing_data = dev.begin_pair(client_name, client_id).await?;
     ///
     /// // Input pin displayed on screen
     /// let mut pin = String::new();
     /// stdin().read_line(&mut pin).unwrap();
     ///
     /// // Finish Pairing
-    /// let auth_token = dev.finish_pair(client_id, pairing_token, challenge, &pin).await?;
+    /// let auth_token = dev.finish_pair(pairing_data, &pin).await?;
     /// println!("{}", auth_token);
     /// // > "Z2zscc1udl"
     /// # Ok(auth_token)
@@ -266,17 +299,16 @@ impl Device {
     /// ```
     pub async fn finish_pair<S: Into<String>>(
         &mut self,
-        client_id: S,
-        pairing_token: u32,
-        challenge: u32,
+        pairing_data: (u32, u32, String),
         pin: S,
     ) -> Result<String> {
+        let (pairing_token, challenge, client_id) = pairing_data;
         // Strip non digits
         let pin: String = pin.into().chars().filter(|c| c.is_digit(10)).collect();
 
         let res = self
-            .send_command(Command::FinishPairing {
-                client_id: client_id.into(),
+            .send_command(CommandDetail::FinishPairing {
+                client_id,
                 pairing_token,
                 challenge,
                 response_value: pin,
@@ -287,8 +319,9 @@ impl Device {
 
     /// Cancel the pairing process
     ///
-    /// Upon calling this method, the pairing process will be canceled and the
-    /// device will leave pairing mode.
+    /// Upon calling this method with the `pairing data` returned from
+    /// [`begin_pair()`](./struct.Device.html/#method.begin_pair),
+    /// the pairing process will be canceled and the device will leave pairing mode.
     ///
     /// # Example
     ///
@@ -302,21 +335,17 @@ impl Device {
     /// let client_id = "myapp-rs";
     ///
     /// // Begin Pairing
-    /// let (pairing_token, challenge) = dev.begin_pair(client_name, client_id).await?;
+    /// let pairing_data = dev.begin_pair(client_name, client_id).await?;
     ///
     /// // Cancel Pairing
-    /// dev.cancel_pair(client_id, pairing_token, challenge).await?;
+    /// dev.cancel_pair(pairing_data).await?;
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn cancel_pair<S: Into<String>>(
-        &self,
-        client_id: S,
-        pairing_token: u32,
-        challenge: u32,
-    ) -> Result<()> {
-        self.send_command(Command::CancelPairing {
-            client_id: client_id.into(),
+    pub async fn cancel_pair(&self, pairing_data: (u32, u32, String)) -> Result<()> {
+        let (pairing_token, challenge, client_id) = pairing_data;
+        self.send_command(CommandDetail::CancelPairing {
+            client_id,
             pairing_token,
             challenge,
         })
@@ -326,7 +355,7 @@ impl Device {
 
     /// Check whether the device is powered on
     pub async fn is_powered_on(&self) -> Result<bool> {
-        let res = self.send_command(Command::GetPowerState).await?;
+        let res = self.send_command(CommandDetail::GetPowerState).await?;
         Ok(res.power_state()?)
     }
 
@@ -362,20 +391,20 @@ impl Device {
     /// ```
     pub async fn button_event<V: Into<Vec<ButtonEvent>>>(&self, buttons: V) -> Result<()> {
         let button_vec: Vec<ButtonEvent> = buttons.into();
-        self.send_command(Command::RemoteButtonPress(button_vec))
+        self.send_command(CommandDetail::RemoteButtonPress(button_vec))
             .await?;
         Ok(())
     }
 
     /// Get the current device input
     pub async fn current_input(&self) -> Result<Input> {
-        let res = self.send_command(Command::GetCurrentInput).await?;
+        let res = self.send_command(CommandDetail::GetCurrentInput).await?;
         Ok(res.current_input()?)
     }
 
     /// Get list of available inputs
     pub async fn list_inputs(&self) -> Result<Vec<Input>> {
-        let res = self.send_command(Command::GetInputList).await?;
+        let res = self.send_command(CommandDetail::GetInputList).await?;
         Ok(res.input_list()?)
     }
 
@@ -402,7 +431,7 @@ impl Device {
     /// Note: the input's default name must be passed in, not the input's custom name -- e.g.
     /// "HDMI-2" instead of "Playstation 4"
     pub async fn change_input<S: Into<String>>(&self, name: S) -> Result<()> {
-        self.send_command(Command::ChangeInput {
+        self.send_command(CommandDetail::ChangeInput {
             name: name.into(),
             hashval: self.current_input().await?.hashval(),
         })
@@ -410,154 +439,75 @@ impl Device {
         Ok(())
     }
 
-    /// TO-DO: Document
-    pub async fn device_info(&self) -> Result<()> {
-        let res = self.send_command(Command::GetDeviceInfo).await?;
-        println!("{:#?}", res.device_info());
-        Ok(())
+    // TODO
+    pub async fn device_info(&self) -> Result<DeviceInfo> {
+        let res = self.send_command(CommandDetail::GetDeviceInfo).await?;
+        Ok(res.device_info()?)
     }
 
-    /// TO-DO: Document
+    // TODO
     pub async fn current_app(&self) -> Result<()> {
-        let res = self.send_command(Command::GetCurrentApp).await?;
+        let res = self.send_command(CommandDetail::GetCurrentApp).await?;
         println!("{:#?}", res);
         Ok(())
     }
 
-    /// TO-DO: Document
-    pub async fn list_apps(&self) -> Result<Vec<App>> {
-        Ok(fetch_apps(&self.client).await?)
+    // TODO: Document
+    pub async fn settings(&self) -> Result<Vec<SubSetting>> {
+        settings::root(self.clone()).await
     }
 
-    /// TO-DO: Document
-    pub async fn launch_app(&self, app: &App) -> Result<()> {
-        let res = self.send_command(Command::LaunchApp(app.payload())).await?;
-        println!("{:#?}", res);
-        Ok(())
+    pub async fn custom_command(
+        &self,
+        request_type: command::RequestType,
+        endpoint: String,
+        put_data: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value> {
+        self.send_command(CommandDetail::Custom(request_type, endpoint, put_data))
+            .await?
+            .value()
     }
 
-    /// TO-DO Document
-    pub async fn read_settings(&self, subsetting: &SubSetting) -> Result<Vec<SubSetting>> {
-        // TO-DO Feature to diable block
-        if subsetting.hidden() {
-            return Err(Error::Blocked);
-        } else if subsetting.object_type() != ObjectType::Menu {
-            return Ok(vec![subsetting.clone()]);
-        }
-
-        let res: Response = self
-            .send_command(Command::ReadSettings(subsetting.clone()))
-            .await?;
-        let mut settings = res.settings()?;
-
-        let parent_endpoint = subsetting.endpoint(UrlBase::None, &self.dev_type);
-        for setting in settings.iter_mut() {
-            setting.add_parent_endpoint(parent_endpoint.clone());
-
-            if setting.hidden() {
-                continue;
-            }
-
-            match setting.object_type() {
-                ObjectType::Slider => {
-                    if setting.slider_info().is_none() {
-                        let res = self
-                            .send_command(Command::ReadStaticSettings(setting.clone()))
-                            .await?;
-                        setting.add_slider_info(res.slider_info()?);
-                    }
-                }
-                ObjectType::List | ObjectType::XList => {
-                    if setting.elements().is_none() {
-                        let res = self
-                            .send_command(Command::ReadStaticSettings(setting.clone()))
-                            .await?;
-                        setting.add_elements(res.elements()?);
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(settings)
+    pub(crate) fn settings_root(&self) -> String {
+        self.inner.settings_root.borrow().clone()
     }
 
-    async fn send_command(&self, command: Command) -> Result<Response> {
-        let url: String = format!(
-            "https://{}:{}{}",
-            self.ip_addr,
-            self.port,
-            command.endpoint(&self.dev_type)
-        );
+    async fn send_command(&self, detail: CommandDetail) -> Result<Response> {
+        Command::new(self.clone(), detail).send().await
+    }
 
-        println!("{:#?}", serde_json::to_string(&command).unwrap());
-
-        // Start building request
-        let mut req = match command.request_type() {
-            RequestType::Get => self.client.get(url),
-            RequestType::Put => {
-                self.client
-                    .put(url)
-                    // Add body for PUT commands
-                    .body(serde_json::to_string(&command).unwrap())
-            }
-        };
-
-        // Add content type header
-        req = req.header("Content-Type", "application/json");
-
-        // If paired, add auth token header
-        match &self.auth_token {
-            Some(token) => {
-                req = req.header("Auth", token.to_string());
-            }
-            None => {}
-        }
-
-        // Send command
-        let res = req.send().await?;
-
-        let response = res.text().await.unwrap();
-        println!("{:#?}", response);
-        let json: serde_json::Value = serde_json::from_str(&response).unwrap();
-
-        // Process response
-        response::process(json)
+    #[cfg(test)]
+    pub fn manufacturer(&self) -> String {
+        self.inner.manufacturer.clone()
     }
 }
 
-// #[derive(Debug)]
-// struct DeviceInfo {
-//     name: String,
-//     manufacturer: String,
-//     model: String,
-//     ip_addr: String,
-//     port: u16,
-//     auth_token: Option<String>
-// }
+#[derive(Debug)]
+pub struct DeviceRef {
+    name: String,
+    manufacturer: String,
+    model: String,
+    settings_root: RefCell<String>,
+    ip_addr: String,
+    port: Cell<u16>,
+    uuid: String,
+    auth_token: RefCell<Option<String>>,
+    client: Client,
+}
 
-// impl DeviceInfo {
-//     fn new(name: String, manufacturer: String, model: String, ip_addr: String) -> Self {
-//         Self {
-//             name,
-//             manufacturer,
-//             model,
-//             ip_addr,
-//             port: 7345,
-//             auth_token: None,
-//         }
-//     }
-// }
+impl DeviceRef {}
 
 #[cfg(test)]
 impl PartialEq for Device {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-            && self.manufacturer == other.manufacturer
-            && self.model == other.model
-            && self.ip_addr == other.ip_addr
-            && self.port == other.port
-            && self.uuid == other.uuid
-            && self.auth_token == other.auth_token
+        let found = self.inner.clone();
+        let expected = other.inner.clone();
+        found.name == expected.name
+            && found.manufacturer == expected.manufacturer
+            && found.model == expected.model
+            && found.ip_addr == expected.ip_addr
+            && found.port == expected.port
+            && found.uuid == expected.uuid
+            && found.auth_token == expected.auth_token
     }
 }
