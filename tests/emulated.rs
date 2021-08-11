@@ -1,20 +1,17 @@
 mod support;
-use support::{connect_device, emulate, PortOption};
+use support::{connect_device, emulate, PortOption, DeviceType};
 
 #[tokio::test]
 async fn pair_start() {
-    println!("START");
-    emulate(PortOption::Port7345).await;
-    println!("CONNECT");
+    emulate(PortOption::Port7345, DeviceType::TV).await;
     let dev = connect_device().await;
 
-    println!("BEGIN");
     dev.begin_pair("client_name", "client_id").await.unwrap();
 }
 
 #[tokio::test]
 async fn pair_finish() {
-    emulate(PortOption::Port7345).await;
+    emulate(PortOption::Port7345, DeviceType::TV).await;
     let mut dev = connect_device().await;
     let client_name = "name";
     let client_id = "id";
@@ -25,7 +22,7 @@ async fn pair_finish() {
 
 #[tokio::test]
 async fn pair_cancel() {
-    emulate(PortOption::Port7345).await;
+    emulate(PortOption::Port7345, DeviceType::TV).await;
     let dev = connect_device().await;
     let client_name = "name";
     let client_id = "id";
@@ -36,7 +33,7 @@ async fn pair_cancel() {
 
 #[tokio::test]
 async fn pair_finish_9000() {
-    emulate(PortOption::Port9000).await;
+    emulate(PortOption::Port9000, DeviceType::TV).await;
     let mut dev = connect_device().await;
     let client_name = "name";
     let client_id = "id";
@@ -47,14 +44,14 @@ async fn pair_finish_9000() {
 
 #[tokio::test]
 async fn powerstate() {
-    emulate(PortOption::Port7345).await;
+    emulate(PortOption::Port7345, DeviceType::TV).await;
     let dev = connect_device().await;
     dev.is_powered_on().await.unwrap();
 }
 
 #[tokio::test]
 async fn current_input() {
-    emulate(PortOption::Port7345).await;
+    emulate(PortOption::Port7345, DeviceType::TV).await;
     let dev = connect_device().await;
 
     dev.current_input().await.unwrap();
@@ -62,7 +59,7 @@ async fn current_input() {
 
 #[tokio::test]
 async fn list_inputs() {
-    emulate(PortOption::Port7345).await;
+    emulate(PortOption::Port7345, DeviceType::TV).await;
     let dev = connect_device().await;
 
     dev.list_inputs().await.unwrap();
@@ -70,7 +67,7 @@ async fn list_inputs() {
 
 #[tokio::test]
 async fn change_input() {
-    emulate(PortOption::Port7345).await;
+    emulate(PortOption::Port7345, DeviceType::TV).await;
     let dev = connect_device().await;
 
     let inputs = dev.list_inputs().await.unwrap();
@@ -82,7 +79,7 @@ async fn change_input() {
 
 #[tokio::test]
 async fn change_input_9000() {
-    emulate(PortOption::Port9000).await;
+    emulate(PortOption::Port9000, DeviceType::TV).await;
     let dev = connect_device().await;
 
     let inputs = dev.list_inputs().await.unwrap();

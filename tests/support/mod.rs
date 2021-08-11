@@ -11,7 +11,7 @@ use pairing::*;
 use smartcast::{Device, Error};
 
 use http::Response;
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{Rng, distributions::{Distribution, Standard}};
 use serde_json::Value;
 use warp::{self, Filter};
 
@@ -43,17 +43,39 @@ pub enum PortOption {
     Port7345,
 }
 
-pub struct EmulatedDevice {
-    name: String,
-    model: String,
-    port: u16,
-    uuid: String,
-    state: RwLock<State>,
-    powered_on: RwLock<bool>,
-    current_input: RwLock<String>,
-    input_list: HashMap<String, Input>,
-    pkey: String,
-    cert: String,
+impl Into<u16> for PortOption {
+    fn into(self) -> u16 {
+        match self {
+            Self::Port7345 => 7345,
+            Self::Port9000 => 9000
+        }
+    }
+}
+
+pub enum DeviceType {
+    TV,
+    Soundbar,
+    Random,
+}
+
+impl DeviceType {
+    fn settings_root(self) -> String {
+        match self {
+            Self::TV => "tv_settings".into(),
+            Self::Soundbar => "audio_settings".into(),
+            Self::Random => Self::settings_root(rand::random()),
+        }
+    }
+}
+
+impl Distribution<DeviceType> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> DeviceType {
+        match rng.gen_range(0..2) {
+            0 => DeviceType::TV,
+            1 => DeviceType::Soundbar,
+            _ => panic!("Bad Range"),
+        }
+    }
 }
 
 #[derive(PartialEq)]
@@ -67,28 +89,31 @@ enum State {
     },
 }
 
+pub struct EmulatedDevice {
+    name: String,
+    model: String,
+    settings_root: String,
+    port: u16,
+    uuid: String,
+    state: RwLock<State>,
+    powered_on: RwLock<bool>,
+    input_list: HashMap<String, Input>,
+    current_input: RwLock<String>,
+    cert: String,
+    pkey: String,
+}
+
 impl EmulatedDevice {
-    fn build(port: PortOption) -> Self {
-        let rand_string: String = rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .map(char::from)
-            .take(32)
-            .collect();
+    fn build(port: PortOption, device_type: DeviceType) -> Self {
 
         let name = "Emulated Device".to_string();
-        let model = "SOME_MODEL".to_string();
-        let port = match port {
-            PortOption::Port7345 => 7345,
-            PortOption::Port9000 => 9000,
-        };
-        let uuid = format!(
-            "{}-{}-{}-{}-{}",
-            &rand_string[0..8],
-            &rand_string[8..12],
-            &rand_string[12..16],
-            &rand_string[16..20],
-            &rand_string[20..32]
-        );
+        let model = rand_data::string(6);
+        let settings_root = device_type.settings_root();
+        let port = port.into();
+        let uuid = rand_data::uuid();
+
+        let input_list = Input::generate();
+        let current_input = input_list.values().next().unwrap().name.clone();
 
         let cert = rcgen::generate_simple_self_signed(vec![
             "127.0.0.1".to_string(),
@@ -98,26 +123,25 @@ impl EmulatedDevice {
         let pkey = cert.serialize_private_key_pem();
         let cert = cert.serialize_pem().unwrap();
 
-        let input_list = Input::generate();
-        let current_input = input_list.values().next().unwrap().name.clone();
 
         Self {
             name,
             model,
+            settings_root,
             port,
             uuid,
             state: RwLock::new(State::Ready),
             powered_on: RwLock::new(false),
-            current_input: RwLock::new(current_input),
             input_list,
-            pkey,
+            current_input: RwLock::new(current_input),
             cert,
+            pkey,
         }
     }
 }
 
-pub async fn emulate(port: PortOption) -> tokio::task::JoinHandle<()> {
-    let device = Arc::new(EmulatedDevice::build(port));
+pub async fn emulate(port: PortOption, device_type: DeviceType) -> tokio::task::JoinHandle<()> {
+    let device = Arc::new(EmulatedDevice::build(port, device_type));
 
     // --- Device Description Server
     let descriptions = warp::path("ssdp")
@@ -332,5 +356,28 @@ impl Input {
             },
         );
         hash
+    }
+}
+
+mod rand_data {
+    use rand::{distributions::Alphanumeric, Rng};
+
+    pub fn string(len: usize) -> String {
+        rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .map(char::from)
+            .take(len)
+            .collect()
+    }
+
+    pub fn uuid() -> String {
+        let rand_string = string(32);
+        format!("{}-{}-{}-{}-{}",
+            &rand_string[0..8],
+            &rand_string[8..12],
+            &rand_string[12..16],
+            &rand_string[16..20],
+            &rand_string[20..32]
+        )
     }
 }

@@ -1,8 +1,6 @@
 use super::*;
 
 pub fn device_info(device: Arc<EmulatedDevice>) -> warp::reply::Json {
-    //TODO
-    println!("INFO");
     let inputs: Vec<String> = device
         .input_list
         .keys()
@@ -32,10 +30,9 @@ pub fn device_info(device: Arc<EmulatedDevice>) -> warp::reply::Json {
         device.name,
         inputs.join(","),
         device.model,
-        "tv_settings", // TODO
+        device.settings_root,
         status!(Result::Success),
     );
     let res: Value = serde_json::from_str(&res).unwrap();
-    println!("{:#?}", res);
     warp::reply::json(&res)
 }
