@@ -64,15 +64,7 @@ pub(super) async fn ssdp(host: &str, st: &str, mx: usize) -> Result<Vec<Device>>
     .join("\r\n");
 
     // Open UDP Socket
-    let socket = UdpSocket::bind({
-        // "Connect" to a local ip to get local address
-        let temp_socket = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], 0))).await?;
-        temp_socket
-            .connect(SocketAddr::from(([192, 168, 0, 1], 1)))
-            .await?;
-        temp_socket.local_addr()?
-    })
-    .await?;
+    let socket = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], 0))).await?;
 
     // Send ssdp request
     socket.send_to(body.as_bytes(), host).await?;
@@ -113,14 +105,16 @@ mod tests {
     use crate::{constant::*, Device};
 
     use chrono::prelude::*;
+    use http::Response;
     use indoc::indoc;
     use rand::{distributions::Alphanumeric, Rng};
     use tokio::{
-        net::{TcpListener, UdpSocket},
+        net::UdpSocket,
         sync::watch::{self, Receiver},
     };
+    use warp::{self, Filter};
 
-    use std::{io, net::SocketAddr};
+    use std::net::SocketAddr;
 
     macro_rules! device_desc {
         ($ip:expr, $port:expr, $name:expr, $manufacturer:expr, $model:expr, $uuid:expr) => {
@@ -186,10 +180,12 @@ mod tests {
         let device_addr = socket.local_addr().unwrap();
 
         // Device Desc Server
-        let desc_server = TcpListener::bind(SocketAddr::from((device_addr.ip(), 0)))
-            .await
-            .unwrap();
-        let desc_addr = desc_server.local_addr().unwrap();
+        let desc_addr: SocketAddr = {
+            let socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+                .await
+                .unwrap();
+            socket.local_addr().unwrap()
+        };
 
         // Build Device
         let rand_string: String = rand::thread_rng()
@@ -223,78 +219,62 @@ mod tests {
         .unwrap();
         let desc_endpoint: String = "ssdp/device-desc.xml".into();
 
-        // Description Server
-        tokio::spawn({
-            let device_ip = device_addr.ip();
-            let ip = device.ip();
-            let port = device.port();
-            let name = device.name();
-            let manufacturer = device.manufacturer();
-            let model_name = device.model_name();
-            let uuid = device.uuid();
-            async move {
-                let device_desc = device_desc!(ip, port, name, manufacturer, model_name, uuid);
-                let body: &str = &[
-                    "HTTP/1.1 200 OK",
-                    &format!("Application-URL:http//{}:{}/apps/", device_ip, 0),
-                    &format!("Content-Length:{}", device_desc.len()),
-                    "Content-Type:application/xml",
-                    "MAN: \"ssdp:discover\"",
-                    "",
-                    &device_desc,
-                ]
-                .join("\r\n");
-
-                while let Ok((stream, _)) = desc_server.accept().await {
-                    loop {
-                        stream.writable().await.unwrap();
-                        match stream.try_write(body.as_bytes()) {
-                            Ok(_) => break,
-                            Err(e) => {
-                                if e.kind() == io::ErrorKind::WouldBlock {
-                                    continue;
-                                } else {
-                                    panic!("{}", e);
-                                }
-                            }
-                        }
-                    }
+        // --- Device Description Server
+        let descriptions = warp::path("ssdp")
+            .and(warp::path("device-desc.xml"))
+            .and(warp::path::end())
+            .and(warp::get())
+            .map({
+                let ip = device.ip();
+                let port = device.port();
+                let name = device.name();
+                let manufacturer = device.manufacturer();
+                let model_name = device.model_name();
+                let uuid = device.uuid();
+                move || {
+                    let desc_xml = device_desc!(ip, port, name, manufacturer, model_name, uuid);
+                    Response::builder()
+                        .header("Application-URL", "http//127.0.0.1:8008/apps/")
+                        .header("Content-Length", desc_xml.len())
+                        .header("Content-Type", "application/xml")
+                        .body(desc_xml)
+                        .unwrap()
                 }
-            }
-        });
+            });
+
+        tokio::spawn(warp::serve(descriptions).run(desc_addr));
 
         // SSDP Response
         tokio::spawn({
-            let uuid = device.uuid();
+            let body = [
+                "HTTP/1.1 200 OK",
+                "CACHE-CONTROL: max-age=1800",
+                &format!("DATE: {}", Utc::now().format("%a, %d %b %Y %X GMT")),
+                "EXT:",
+                &format!(
+                    "LOCATION: http://{}:{}/{}",
+                    desc_addr.ip(),
+                    desc_addr.port(),
+                    desc_endpoint
+                ),
+                "OPT: \"http://schemas.upnp.org/upnp/1/0/\"; ns=01",
+                "SERVER: Linux/4.19.71+, UPnP/1.0, Portable SDK for UPnP devices/1.6.18",
+                "X-User-Agent: redsonic",
+                "ST: urn:dial-multiscreen-org:device:dial:1",
+                &format!(
+                    "USN: uuid:{}::urn:dial-multiscreen-org:device:dial:1",
+                    device.uuid()
+                ),
+                "BOOTID.UPNP.ORG: 0",
+                "CONFIGID.UPNP.ORG: 3",
+                "",
+                "",
+            ]
+            .join("\r\n");
             async move {
                 while rx.changed().await.is_ok() {
                     let msg = *rx.borrow();
                     if let Some(ip) = msg {
-                        let body = &[
-                            "HTTP/1.1 200 OK",
-                            "CACHE-CONTROL: max-age=1800",
-                            &format!("DATE: {}", Utc::now().format("%a, %d %b %Y %X GMT")),
-                            "EXT:",
-                            &format!(
-                                "LOCATION: http://{}:{}/{}",
-                                desc_addr.ip(),
-                                desc_addr.port(),
-                                desc_endpoint
-                            ),
-                            "OPT: \"http://schemas.upnp.org/upnp/1/0/\"; ns=01",
-                            "SERVER: Linux/4.19.71+, UPnP/1.0, Portable SDK for UPnP devices/1.6.18",
-                            "X-User-Agent: redsonic",
-                            "ST: urn:dial-multiscreen-org:device:dial:1",
-                            &format!(
-                                "USN: uuid:{}::urn:dial-multiscreen-org:device:dial:1",
-                                uuid
-                            ),
-                            "BOOTID.UPNP.ORG: 0",
-                            "CONFIGID.UPNP.ORG: 3",
-                            "",
-                            "",
-                        ]
-                        .join("\r\n");
                         socket.send_to(body.as_bytes(), ip).await.unwrap();
                     }
                 }
