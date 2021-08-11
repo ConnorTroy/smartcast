@@ -253,7 +253,7 @@ impl Device {
     ///
     /// This method returns `pairing data` consisting of a `Pairing Token`, a `Challenge Type`, and the `Client ID` which
     /// will need to be passed into [`finish_pair()`](Self::finish_pair)
-    /// or [`cancel_pair()`](self::cancel_pair).
+    /// or [`cancel_pair()`](Self::cancel_pair).
     /// Note: It may not be necessary to pair your device if it is a soundbar.
     pub async fn begin_pair<S: Into<String>>(
         &self,
@@ -274,7 +274,7 @@ impl Device {
     /// Finish the pairing process
     ///
     /// Upon calling this method with the `pairing data` returned from
-    /// [`begin_pair()`](self::begin_pair) and the pin displayed
+    /// [`begin_pair()`](Self::begin_pair) and the pin displayed
     /// by the device, the pairing process will end and the client will be paired.
     ///
     /// # Example
@@ -326,7 +326,7 @@ impl Device {
     /// Cancel the pairing process
     ///
     /// Upon calling this method with the `pairing data` returned from
-    /// [`begin_pair()`](self::begin_pair),
+    /// [`begin_pair()`](Self::begin_pair),
     /// the pairing process will be canceled and the device will leave pairing mode.
     ///
     /// # Example
