@@ -21,8 +21,10 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
-/// A Vizio Device
-// TODO: Document
+/// A SmartCast Device
+///
+/// More specifically, a client for connecting to a SmartCast device. Search for devices on your
+/// local network using [`discover_devices()`](crate::discover_devices).
 #[derive(Debug, Clone)]
 pub struct Device {
     inner: Rc<DeviceRef>,
@@ -246,8 +248,8 @@ impl Device {
     /// in the device's "Mobile Devices" page, along with a `Client ID` which will be used to identify the client.
     ///
     /// This method returns `pairing data` consisting of a `Pairing Token`, a `Challenge Type`, and the `Client ID` which
-    /// will need to be passed into [`finish_pair()`](./struct.Device.html/#method.finish_pair)
-    /// or [`cancel_pair()`](./struct.Device.html/#method.cancel_pair).
+    /// will need to be passed into [`finish_pair()`](Self::finish_pair)
+    /// or [`cancel_pair()`](self::cancel_pair).
     /// Note: It may not be necessary to pair your device if it is a soundbar.
     pub async fn begin_pair<S: Into<String>>(
         &self,
@@ -268,7 +270,7 @@ impl Device {
     /// Finish the pairing process
     ///
     /// Upon calling this method with the `pairing data` returned from
-    /// [`begin_pair()`](./struct.Device.html/#method.begin_pair) and the pin displayed
+    /// [`begin_pair()`](self::begin_pair) and the pin displayed
     /// by the device, the pairing process will end and the client will be paired.
     ///
     /// # Example
@@ -320,7 +322,7 @@ impl Device {
     /// Cancel the pairing process
     ///
     /// Upon calling this method with the `pairing data` returned from
-    /// [`begin_pair()`](./struct.Device.html/#method.begin_pair),
+    /// [`begin_pair()`](self::begin_pair),
     /// the pairing process will be canceled and the device will leave pairing mode.
     ///
     /// # Example
