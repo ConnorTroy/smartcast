@@ -18,13 +18,17 @@ use self::response::Response;
 use reqwest::Client;
 
 use std::cell::{Cell, RefCell};
+use std::future::Future;
 use std::rc::Rc;
 use std::time::Duration;
 
 /// A SmartCast Device
 ///
 /// More specifically, a client for connecting to a SmartCast device. Search for devices on your
-/// local network using [`discover_devices()`](crate::discover_devices).
+/// local network using [`discover_devices()`](crate::discover_devices). You can also connect directly
+/// using [`Device::from_ip()`](Device::from_ip) or [`Device::from_uuid()`](Device::from_uuid).
+///
+/// Note that cloning `Device` is zero-cost but not thread safe.
 #[derive(Debug, Clone)]
 pub struct Device {
     inner: Rc<DeviceRef>,
@@ -71,7 +75,7 @@ impl Device {
         // Check port options
         self.find_port().await?;
 
-        // Try to figure out device type
+        // Get settings root
         self.set_settings_root().await?;
 
         Ok(self)
@@ -191,7 +195,7 @@ impl Device {
         self.inner.uuid.clone()
     }
 
-    // TODO
+    /// Get device's ESN
     pub async fn esn(&self) -> Result<String> {
         let res = match self.send_command(CommandDetail::GetESN).await {
             Ok(res) => res,
@@ -201,7 +205,7 @@ impl Device {
         Ok(res.esn()?)
     }
 
-    // TODO
+    /// Get device's serial number
     pub async fn serial(&self) -> Result<String> {
         let res = match self.send_command(CommandDetail::GetSerial).await {
             Ok(res) => res,
@@ -211,7 +215,7 @@ impl Device {
         Ok(res.serial()?)
     }
 
-    // TODO
+    /// Get device's firmware version
     pub async fn version(&self) -> Result<String> {
         let res = match self.send_command(CommandDetail::GetVersion).await {
             Ok(res) => res,
@@ -227,7 +231,7 @@ impl Device {
     }
 
     /// If previously paired, you may manually set the client's auth token for the device.
-    pub async fn set_auth_token<S: Into<String>>(&mut self, token: S) -> Result<()> {
+    pub async fn set_auth_token<S: Into<String>>(&self, token: S) -> Result<()> {
         let old_token = self.auth_token();
         self.inner.auth_token.replace(Some(token.into()));
 
@@ -442,17 +446,17 @@ impl Device {
     }
 
     // TODO
-    pub async fn device_info(&self) -> Result<DeviceInfo> {
+    pub(crate) async fn device_info(&self) -> Result<DeviceInfo> {
         let res = self.send_command(CommandDetail::GetDeviceInfo).await?;
         Ok(res.device_info()?)
     }
 
     // TODO
-    pub async fn current_app(&self) -> Result<()> {
-        let res = self.send_command(CommandDetail::GetCurrentApp).await?;
-        println!("{:#?}", res);
-        Ok(())
-    }
+    // pub async fn current_app(&self) -> Result<()> {
+    //     let res = self.send_command(CommandDetail::GetCurrentApp).await?;
+    //     println!("{:#?}", res);
+    //     Ok(())
+    // }
 
     /// Get the root of the device's [`Settings`](SubSetting).
     pub async fn settings(&self) -> Result<Vec<SubSetting>> {
@@ -474,8 +478,8 @@ impl Device {
         self.inner.settings_root.borrow().clone()
     }
 
-    async fn send_command(&self, detail: CommandDetail) -> Result<Response> {
-        Command::new(self.clone(), detail).send().await
+    fn send_command(&self, detail: CommandDetail) -> impl Future<Output = Result<Response>> {
+        Command::new(self.clone(), detail).send()
     }
 
     #[cfg(test)]
