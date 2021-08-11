@@ -81,8 +81,6 @@ impl Response {
 }
 
 pub fn process(response: String) -> Result<Response> {
-    // TODO: handle bad request xml
-
     let response: Value = match serde_json::from_str(&response) {
         Ok(res) => res,
         Err(_) => return Err(Error::Other(response)),

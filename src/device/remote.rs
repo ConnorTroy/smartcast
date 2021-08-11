@@ -1,6 +1,6 @@
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 
-/// Button interactions used in [`button_event()`](./struct.Device.html/#method.button_event)
+/// Button interactions used in [`button_event()`](super::Device::button_event)
 ///
 /// Must include a [`Button`] to specify what you want to interact with
 pub enum ButtonEvent {

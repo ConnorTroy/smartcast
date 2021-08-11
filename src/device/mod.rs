@@ -10,7 +10,7 @@ mod settings;
 
 pub use self::info::Input;
 pub use self::remote::{Button, ButtonEvent};
-pub use self::settings::{EndpointBase, ObjectType, SliderInfo, SubSetting};
+pub use self::settings::{EndpointBase, SettingsType, SliderInfo, SubSetting};
 
 use self::command::{Command, CommandDetail};
 use self::info::DeviceInfo;
@@ -18,11 +18,17 @@ use self::response::Response;
 use reqwest::Client;
 
 use std::cell::{Cell, RefCell};
+use std::future::Future;
 use std::rc::Rc;
 use std::time::Duration;
 
-/// A Vizio Device
-// TODO: Document
+/// A SmartCast Device
+///
+/// More specifically, a client for connecting to a SmartCast device. Search for devices on your
+/// local network using [`discover_devices()`](crate::discover_devices). You can also connect directly
+/// using [`Device::from_ip()`](Device::from_ip) or [`Device::from_uuid()`](Device::from_uuid).
+///
+/// Note that cloning `Device` is zero-cost but not thread safe.
 #[derive(Debug, Clone)]
 pub struct Device {
     inner: Rc<DeviceRef>,
@@ -69,7 +75,7 @@ impl Device {
         // Check port options
         self.find_port().await?;
 
-        // Try to figure out device type
+        // Get settings root
         self.set_settings_root().await?;
 
         Ok(self)
@@ -189,7 +195,7 @@ impl Device {
         self.inner.uuid.clone()
     }
 
-    // TODO
+    /// Get device's ESN
     pub async fn esn(&self) -> Result<String> {
         let res = match self.send_command(CommandDetail::GetESN).await {
             Ok(res) => res,
@@ -199,7 +205,7 @@ impl Device {
         Ok(res.esn()?)
     }
 
-    // TODO
+    /// Get device's serial number
     pub async fn serial(&self) -> Result<String> {
         let res = match self.send_command(CommandDetail::GetSerial).await {
             Ok(res) => res,
@@ -209,7 +215,7 @@ impl Device {
         Ok(res.serial()?)
     }
 
-    // TODO
+    /// Get device's firmware version
     pub async fn version(&self) -> Result<String> {
         let res = match self.send_command(CommandDetail::GetVersion).await {
             Ok(res) => res,
@@ -225,7 +231,7 @@ impl Device {
     }
 
     /// If previously paired, you may manually set the client's auth token for the device.
-    pub async fn set_auth_token<S: Into<String>>(&mut self, token: S) -> Result<()> {
+    pub async fn set_auth_token<S: Into<String>>(&self, token: S) -> Result<()> {
         let old_token = self.auth_token();
         self.inner.auth_token.replace(Some(token.into()));
 
@@ -246,8 +252,8 @@ impl Device {
     /// in the device's "Mobile Devices" page, along with a `Client ID` which will be used to identify the client.
     ///
     /// This method returns `pairing data` consisting of a `Pairing Token`, a `Challenge Type`, and the `Client ID` which
-    /// will need to be passed into [`finish_pair()`](./struct.Device.html/#method.finish_pair)
-    /// or [`cancel_pair()`](./struct.Device.html/#method.cancel_pair).
+    /// will need to be passed into [`finish_pair()`](Self::finish_pair)
+    /// or [`cancel_pair()`](self::cancel_pair).
     /// Note: It may not be necessary to pair your device if it is a soundbar.
     pub async fn begin_pair<S: Into<String>>(
         &self,
@@ -268,7 +274,7 @@ impl Device {
     /// Finish the pairing process
     ///
     /// Upon calling this method with the `pairing data` returned from
-    /// [`begin_pair()`](./struct.Device.html/#method.begin_pair) and the pin displayed
+    /// [`begin_pair()`](self::begin_pair) and the pin displayed
     /// by the device, the pairing process will end and the client will be paired.
     ///
     /// # Example
@@ -278,7 +284,7 @@ impl Device {
     /// # use std::io::stdin;
     /// #
     /// # async fn pair() -> Result<String, smartcast::Error> {
-    /// let mut dev = Device::from_ip("192.168.0.14").await.unwrap();
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
     ///
     /// let client_name = "My App Name";
     /// let client_id = "myapp-rs";
@@ -288,7 +294,7 @@ impl Device {
     ///
     /// // Input pin displayed on screen
     /// let mut pin = String::new();
-    /// stdin().read_line(&mut pin).unwrap();
+    /// stdin().read_line(&mut pin);
     ///
     /// // Finish Pairing
     /// let auth_token = dev.finish_pair(pairing_data, &pin).await?;
@@ -320,7 +326,7 @@ impl Device {
     /// Cancel the pairing process
     ///
     /// Upon calling this method with the `pairing data` returned from
-    /// [`begin_pair()`](./struct.Device.html/#method.begin_pair),
+    /// [`begin_pair()`](self::begin_pair),
     /// the pairing process will be canceled and the device will leave pairing mode.
     ///
     /// # Example
@@ -329,7 +335,7 @@ impl Device {
     /// # use smartcast::Device;
     /// #
     /// # async fn pair_cancel() -> Result<(), smartcast::Error> {
-    /// let mut dev = Device::from_ip("192.168.0.14").await.unwrap();
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
     ///
     /// let client_name = "My App Name";
     /// let client_id = "myapp-rs";
@@ -370,7 +376,7 @@ impl Device {
     /// use smartcast::{Device, ButtonEvent, Button};
     ///
     /// # async fn power_on_volume_up() -> Result<Device, smartcast::Error> {
-    /// let mut dev = Device::from_ip("192.168.0.14").await.unwrap();
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
     /// dev.set_auth_token("Z2zscc1udl");
     ///
     /// // Power on device
@@ -416,7 +422,7 @@ impl Device {
     /// # use smartcast::Device;
     /// #
     /// # async fn change_input() -> Result<(), smartcast::Error> {
-    /// let mut dev = Device::from_ip("192.168.0.14").await.unwrap();
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
     /// dev.set_auth_token("Z2zscc1udl");
     ///
     /// println!("{}", dev.current_input().await?.friendly_name());
@@ -440,19 +446,19 @@ impl Device {
     }
 
     // TODO
-    pub async fn device_info(&self) -> Result<DeviceInfo> {
+    pub(crate) async fn device_info(&self) -> Result<DeviceInfo> {
         let res = self.send_command(CommandDetail::GetDeviceInfo).await?;
         Ok(res.device_info()?)
     }
 
     // TODO
-    pub async fn current_app(&self) -> Result<()> {
-        let res = self.send_command(CommandDetail::GetCurrentApp).await?;
-        println!("{:#?}", res);
-        Ok(())
-    }
+    // pub async fn current_app(&self) -> Result<()> {
+    //     let res = self.send_command(CommandDetail::GetCurrentApp).await?;
+    //     println!("{:#?}", res);
+    //     Ok(())
+    // }
 
-    // TODO: Document
+    /// Get the root of the device's [`Settings`](SubSetting).
     pub async fn settings(&self) -> Result<Vec<SubSetting>> {
         settings::root(self.clone()).await
     }
@@ -472,8 +478,8 @@ impl Device {
         self.inner.settings_root.borrow().clone()
     }
 
-    async fn send_command(&self, detail: CommandDetail) -> Result<Response> {
-        Command::new(self.clone(), detail).send().await
+    fn send_command(&self, detail: CommandDetail) -> impl Future<Output = Result<Response>> {
+        Command::new(self.clone(), detail).send()
     }
 
     #[cfg(test)]

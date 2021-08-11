@@ -1,17 +1,55 @@
+//! # SmartCast Api
+//!
+//! This library provides an API for connecting to and controlling Vizio SmartCast TVs and Speakers. The struct `Device` provides a client for interfacing with the SmartCast device.
+//!
+//! ## Get Started
+//!
+//! You can use [`discover_devices()`] to find SmartCast devices on your local network by issuing an [SSDP Query](https://en.wikipedia.org/wiki/Simple_Service_Discovery_Protocol)
+//! or attempt to connect directly using [`Device::from_ip()`](Device::from_ip) or [`Device::from_uuid()`](Device::from_uuid).
+
+//! ### Example
+
+//! ```rust
+//! use smartcast::Device;
+//!
+//! async fn example_main() -> Result<(), smartcast::Error> {
+//!    let ssdp_devices = smartcast::discover_devices().await?;
+//!
+//!     let dev_by_ssdp = ssdp_devices[0].clone();
+//!     let dev_by_ip = Device::from_ip(dev_by_ssdp.ip()).await?;
+//!     let dev_by_uuid = Device::from_uuid(dev_by_ssdp.uuid()).await?;
+//!
+//!     assert_eq!(dev_by_ssdp.name(), dev_by_ip.name());
+//!     assert_eq!(dev_by_ssdp.name(), dev_by_uuid.name());
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## Task List
+//!
+//! - [x] Connect
+//! - [x] Pairing
+//! - [x] Readable settings
+//! - [x] Get device state
+//! - [x] Virtual remote commands
+//! - [ ] Writeable settings
+//! - [ ] App launching
+//! - [ ] Testing
 mod constant;
 mod device;
 mod discover;
 mod error;
 use constant::*;
 
-pub use device::{Button, ButtonEvent, Device, Input, ObjectType, SubSetting};
+pub use device::{Button, ButtonEvent, Device, Input, SettingsType, SliderInfo, SubSetting};
 pub use error::{Error, Result};
 
-/// Discover Vizio devices on network
+use std::future::Future;
+
+/// Discover devices on network
 ///
-/// This function uses SSDP to find Vizio devices
-/// connected to the local network. It will return a vector of
-/// [`Device`]s
-pub async fn discover_devices() -> Result<Vec<Device>> {
-    Ok(discover::ssdp(SSDP_IP, SSDP_URN, DEFAULT_SSDP_MAXTIME).await?)
+/// This function uses SSDP to find devices connected to the local network.
+/// It will return a [`Vec`] of [`Device`]s
+pub fn discover_devices() -> impl Future<Output = Result<Vec<Device>>> {
+    discover::ssdp(SSDP_IP, SSDP_URN, DEFAULT_SSDP_MAXTIME)
 }
