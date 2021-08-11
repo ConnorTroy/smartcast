@@ -43,11 +43,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-      env:
-        RUSTDOCFLAGS: -D warnings
-        
+
     - name: Doc check
-      run: cargo doc --no-deps --document-private-items --all-features
+      run: RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --document-private-items --all-features
 
   linux:
 
