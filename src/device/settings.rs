@@ -23,16 +23,16 @@ impl EndpointBase {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-/// Object types to which [`SubSetting`] corresponds
-pub enum SettingsType {
+/// Object types to which [`SubSetting`] corresponds.
+pub enum SettingType {
     /// Slider which has a max/min value. See [`SliderInfo`] for more details.
     Slider,
-    /// List of possible values which should be displayed. Use [`elements()`](SubSetting::elements) to get list data.
-    List,
-    /// Mutable value
+    /// Common setting with some value
     Value,
     /// Menu containing more [`SubSetting`]s
     Menu,
+    /// List of possible values which should be displayed. Use [`elements()`](SubSetting::elements) to get list data.
+    List,
     /// List of possible values which should be displayed. Use [`elements()`](SubSetting::elements) to get list data.
     XList,
     #[doc(hidden)]
@@ -40,23 +40,23 @@ pub enum SettingsType {
 }
 
 /// Deserializer for [`SettingsType`]
-impl<'de> Deserialize<'de> for SettingsType {
-    fn deserialize<D>(deserializer: D) -> StdResult<SettingsType, D::Error>
+impl<'de> Deserialize<'de> for SettingType {
+    fn deserialize<D>(deserializer: D) -> StdResult<SettingType, D::Error>
     where
         D: de::Deserializer<'de>,
     {
         Ok(match String::deserialize(deserializer)?.as_str() {
-            "T_VALUE_ABS_V1" => SettingsType::Slider,
-            "T_LIST_V1" => SettingsType::List,
-            "T_VALUE_V1" => SettingsType::Value,
-            "T_MENU_V1" => SettingsType::Menu,
-            "T_LIST_X_V1" => SettingsType::XList,
-            other => SettingsType::Other(other.into()),
+            "T_VALUE_ABS_V1" => SettingType::Slider,
+            "T_LIST_V1" => SettingType::List,
+            "T_VALUE_V1" => SettingType::Value,
+            "T_MENU_V1" => SettingType::Menu,
+            "T_LIST_X_V1" => SettingType::XList,
+            other => SettingType::Other(other.into()),
         })
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 /// Information about a settings slider
 pub struct SliderInfo {
@@ -157,7 +157,7 @@ pub struct SubSetting {
     #[serde(deserialize_with = "string_to_bool", default)]
     readonly: bool,
     #[serde(rename = "TYPE")]
-    object_type: SettingsType,
+    object_type: SettingType,
     value: Option<Value>, // Not a serde_json Value; the field named value
     #[serde(skip)]
     device: Option<Device>,
@@ -176,7 +176,7 @@ impl fmt::Debug for SubSetting {
 }
 
 impl SubSetting {
-    /// If the settings object is a `Menu`, get its [`SubSetting`]s
+    /// If the settings object is a `Menu`, get its [`SubSetting`]s.
     ///
     /// # Example
     ///
@@ -239,27 +239,54 @@ impl SubSetting {
         Ok(settings)
     }
 
-    /// Name of the setting
+    /// Name of the setting.
     pub fn name(&self) -> String {
         self.name.clone()
     }
 
-    /// Whether the setting should be displayed
+    /// Returns true if the setting should be displayed.
     pub fn hidden(&self) -> bool {
         self.hidden
     }
 
-    /// Whether the setting is read-only
+    /// Returns true if the setting is read only.
     pub fn read_only(&self) -> bool {
         self.readonly
     }
 
-    /// Type of the settings object. See [`SettingsType`].
-    pub fn object_type(&self) -> SettingsType {
+    /// Type of the settings object. See [`SettingType`].
+    pub fn setting_type(&self) -> SettingType {
         self.object_type.clone()
     }
 
-    /// The current value of the setting
+    /// Returns true if the value is a boolean. Returns false otherwise.
+    pub fn is_boolean(&self) -> bool {
+        if let Some(value) = self.value.clone() {
+            value.is_boolean()
+        } else {
+            false
+        }
+    }
+
+    /// Returns true if the value is a String. Returns false otherwise.
+    pub fn is_string(&self) -> bool {
+        if let Some(value) = self.value.clone() {
+            value.is_string()
+        } else {
+            false
+        }
+    }
+
+    /// Returns true if the Value is a 32 bit signed integer.
+    pub fn is_number(&self) -> bool {
+        if let Some(value) = self.value.clone() {
+            value.is_number()
+        } else {
+            false
+        }
+    }
+
+    /// Get the current value of the setting.
     ///
     /// # Example
     ///
@@ -292,12 +319,29 @@ impl SubSetting {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn value<T: for<'de> serde::Deserialize<'de>>(&self) -> Option<T> {
+    pub fn value<T: for<'de> Deserialize<'de>>(&self) -> Option<T> {
         if let Some(value) = self.value.clone() {
             serde_json::from_value(value).ok()
         } else {
             None
         }
+    }
+
+    /// Change the value of the setting.
+    ///
+    /// Returns an error if:
+    /// * The value passed in is not the same type as the value currently in the setting.
+    /// * In the case of a `Slider`, the value passed in is higher than the max or lower than the min.
+    /// * In the case of a `List` or `XList`, the value passed in is not present in the setting's [`Elements`](Self::elements).
+    /// * The [`setting type`](Self::setting_type) is not a `Slider`, `List`, `Xlist`, or `Value`.
+    ///
+    /// # Example
+    /// ```
+    /// // TODO
+    /// ```
+    pub async fn write<T>(&self, new_value: T) -> Result<()> {
+        // TODO
+        Ok(())
     }
 
     /// If the setting object is a `Slider`, get the slider info. See [`SliderInfo`].
@@ -331,18 +375,18 @@ impl SubSetting {
     ///     println!("{:#?}", slider_info);
     /// }
     /// // > SliderInfo {
-    /// // > dec_marker: "Red",
-    /// // > inc_marker: "Green",
-    /// // > increment: 1,
-    /// // > max: 50,
-    /// // > min: -50,
-    /// // > center: 0,
+    /// // >     dec_marker: "Red",
+    /// // >     inc_marker: "Green",
+    /// // >     increment: 1,
+    /// // >     max: 50,
+    /// // >     min: -50,
+    /// // >     center: 0,
     /// // > }
     /// # Ok(())
     /// # }
     /// ```
     pub async fn slider_info(&self) -> Result<Option<SliderInfo>> {
-        if self.object_type == SettingsType::Slider {
+        if self.object_type == SettingType::Slider {
             match self.static_response().await?.slider_info() {
                 Ok(info) => Ok(Some(info)),
                 Err(_) => Ok(self.dynamic_response().await?.slider_info().ok()),
@@ -382,18 +426,18 @@ impl SubSetting {
     ///     println!("{:#?}", elements);
     /// }
     /// // > [
-    /// // > "Vivid",
-    /// // > "Bright",
-    /// // > "Calibrated",
-    /// // > "Calibrated Dark*",
-    /// // > "Game",
-    /// // > "Sports",
+    /// // >     "Vivid",
+    /// // >     "Bright",
+    /// // >     "Calibrated",
+    /// // >     "Calibrated Dark*",
+    /// // >     "Game",
+    /// // >     "Sports",
     /// // > ],
     /// # Ok(())
     /// # }
     /// ```
     pub async fn elements(&self) -> Result<Option<Vec<String>>> {
-        if self.object_type == SettingsType::List || self.object_type == SettingsType::XList {
+        if self.object_type == SettingType::List || self.object_type == SettingType::XList {
             match self.dynamic_response().await?.elements() {
                 Ok(elements) => Ok(Some(elements)),
                 Err(_) => Ok(self.static_response().await?.elements().ok()),
@@ -431,17 +475,17 @@ impl SubSetting {
 
     /// Get the top level settings menu
     async fn root(device: Device) -> Result<Vec<SubSetting>> {
-        let trunk = SubSetting {
+        let root = SubSetting {
             endpoint: format!("/{}", device.settings_root()),
             hashval: 0,
             hidden: false,
             name: "".into(),
             readonly: false,
-            object_type: SettingsType::Menu,
+            object_type: SettingType::Menu,
             value: None,
             device: Some(device.clone()),
         };
-        trunk.expand().await
+        root.expand().await
     }
 
     fn add_parent_data(&mut self, parent: &SubSetting) {

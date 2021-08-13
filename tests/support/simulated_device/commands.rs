@@ -1,11 +1,11 @@
-use super::{EmulatedDevice, Input, Result, State};
+use super::{settings::Setting, Input, Result, SimulatedDevice, State};
 
 use rand::Rng;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// Start pairing command
-pub fn pair_start(mut val: Value, device: EmulatedDevice) -> warp::reply::Json {
-    dbg!("PAIR START");
+pub fn pair_start(mut val: Value, device: SimulatedDevice) -> warp::reply::Json {
+    log::info!(target: "test::simulated_device::commands", "PAIR START");
     let client_id = serde_json::from_value::<String>(val["DEVICE_ID"].take());
     let client_name = serde_json::from_value::<String>(val["DEVICE_NAME"].take());
 
@@ -46,8 +46,8 @@ pub fn pair_start(mut val: Value, device: EmulatedDevice) -> warp::reply::Json {
 }
 
 /// Finish pairing command
-pub fn pair_finish(mut val: Value, device: EmulatedDevice) -> warp::reply::Json {
-    dbg!("PAIR FINISH");
+pub fn pair_finish(mut val: Value, device: SimulatedDevice) -> warp::reply::Json {
+    log::info!(target: "test::simulated_device::commands", "PAIR FINISH");
     let client_id = serde_json::from_value::<String>(val["DEVICE_ID"].take());
     let challenge = serde_json::from_value::<u32>(val["CHALLENGE_TYPE"].take());
     let pin = serde_json::from_value::<String>(val["RESPONSE_VALUE"].take());
@@ -99,8 +99,8 @@ pub fn pair_finish(mut val: Value, device: EmulatedDevice) -> warp::reply::Json 
 }
 
 /// Cancel pairing command
-pub fn pair_cancel(mut val: Value, device: EmulatedDevice) -> warp::reply::Json {
-    dbg!("PAIR CANCEL");
+pub fn pair_cancel(mut val: Value, device: SimulatedDevice) -> warp::reply::Json {
+    log::info!(target: "test::simulated_device::commands", "PAIR CANCEL");
     let client_id = serde_json::from_value::<String>(val["DEVICE_ID"].take());
     let challenge = serde_json::from_value::<u32>(val["CHALLENGE_TYPE"].take());
     let pin = serde_json::from_value::<String>(val["RESPONSE_VALUE"].take());
@@ -156,8 +156,8 @@ pub fn pair_cancel(mut val: Value, device: EmulatedDevice) -> warp::reply::Json 
 }
 
 /// Get power state command
-pub fn power_state(device: EmulatedDevice) -> warp::reply::Json {
-    dbg!("POWER STATE");
+pub fn power_state(device: SimulatedDevice) -> warp::reply::Json {
+    log::info!(target: "test::simulated_device::commands", "POWER STATE");
     let res = format!(
         r#"
     {{
@@ -183,8 +183,8 @@ pub fn power_state(device: EmulatedDevice) -> warp::reply::Json {
 }
 
 /// Get current input command
-pub fn current_input(device: EmulatedDevice) -> warp::reply::Json {
-    dbg!("CURRENT INPUT");
+pub fn current_input(device: SimulatedDevice) -> warp::reply::Json {
+    log::info!(target: "test::simulated_device::commands", "CURRENT INPUT");
     let input: &Input = device
         .inner
         .input_list
@@ -227,8 +227,8 @@ pub fn current_input(device: EmulatedDevice) -> warp::reply::Json {
 }
 
 /// Get list of inputs command
-pub fn list_inputs(device: EmulatedDevice) -> warp::reply::Json {
-    dbg!("LIST INPUTS");
+pub fn list_inputs(device: SimulatedDevice) -> warp::reply::Json {
+    log::info!(target: "test::simulated_device::commands", "LIST INPUTS");
     let mut rng = rand::thread_rng();
 
     let mut items: Vec<String> = Vec::new();
@@ -283,8 +283,8 @@ pub fn list_inputs(device: EmulatedDevice) -> warp::reply::Json {
 }
 
 /// Change input command
-pub fn change_input(mut val: Value, device: EmulatedDevice) -> warp::reply::Json {
-    dbg!("CHANGE INPUT");
+pub fn change_input(mut val: Value, device: SimulatedDevice) -> warp::reply::Json {
+    log::info!(target: "test::simulated_device::commands", "CHANGE INPUT");
     let request = serde_json::from_value::<String>(val["REQUEST"].take()).unwrap();
     let name = serde_json::from_value::<String>(val["VALUE"].take());
     let hashval = serde_json::from_value::<u32>(val["HASHVAL"].take());
@@ -324,8 +324,8 @@ pub fn change_input(mut val: Value, device: EmulatedDevice) -> warp::reply::Json
 }
 
 /// Get device info command
-pub fn device_info(device: EmulatedDevice) -> warp::reply::Json {
-    dbg!("DEVICE INFO");
+pub fn device_info(device: SimulatedDevice) -> warp::reply::Json {
+    log::info!(target: "test::simulated_device::commands", "DEVICE INFO");
     let inputs: Vec<String> = device
         .inner
         .input_list
@@ -363,12 +363,31 @@ pub fn device_info(device: EmulatedDevice) -> warp::reply::Json {
     warp::reply::json(&res)
 }
 
+/// Read dynamic settings command
+pub fn read_setting_dynamic(setting: Setting) -> warp::reply::Json {
+    log::info!(target: "test::simulated_device::commands", "READ DYNAMIC SETTINGS");
+    warp::reply::json(&setting.dynamic_value())
+}
+
+/// Read static settings command
+pub fn read_setting_static(setting: Setting) -> warp::reply::Json {
+    log::info!(target: "test::simulated_device::commands", "READ STATIC SETTINGS");
+    warp::reply::json(&setting.static_value())
+}
+
+pub fn write_setting(mut val: Value, setting: Setting) -> warp::reply::Json {
+    log::info!(target: "test::simulated_device::commands", "WRITE SETTINGS");
+    let request = serde_json::from_value::<String>(val["REQUEST"].take());
+    let hashval = serde_json::from_value::<u32>(val["HASHVAL"].take());
+    let value = val["VALUE"].take();
+    warp::reply::json(&json!(""))
+}
+
 // TODO:
 // Get ESN command
 // Get Serial No. command
 // Get FW Version command
 // Virtual remote commands
-// Read settings command
 // Write settings command
 // Get app list command
 // Launch app command
