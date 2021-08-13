@@ -34,14 +34,13 @@
 //! - [x] Virtual remote commands
 //! - [ ] Writeable settings
 //! - [ ] App launching
-//! - [ ] Testing
 mod constant;
 mod device;
 mod discover;
 mod error;
 use constant::*;
 
-pub use device::{Button, ButtonEvent, Device, Input, SettingsType, SliderInfo, SubSetting};
+pub use device::{Button, ButtonEvent, Device, Input, SettingType, SliderInfo, SubSetting};
 pub use error::{Error, Result};
 
 use std::future::Future;

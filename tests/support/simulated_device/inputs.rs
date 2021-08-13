@@ -2,7 +2,7 @@ use rand::Rng;
 
 use std::collections::HashMap;
 
-/// Struct to emulate an input on a device
+/// Struct to simulate an input on a device
 #[derive(Debug)]
 pub struct Input {
     pub cname: String,

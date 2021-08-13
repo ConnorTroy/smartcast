@@ -10,7 +10,7 @@ mod settings;
 
 pub use self::info::Input;
 pub use self::remote::{Button, ButtonEvent};
-pub use self::settings::{EndpointBase, SettingsType, SliderInfo, SubSetting};
+pub use self::settings::{EndpointBase, SettingType, SliderInfo, SubSetting};
 
 use self::command::{Command, CommandDetail};
 use self::info::DeviceInfo;

@@ -1,7 +1,11 @@
 mod commands;
 mod inputs;
+mod settings;
+
+use super::rand_data;
 
 use inputs::Input;
+pub use settings::{expected_slider_info, LIST_LEN};
 
 use http::Response;
 use rand::{
@@ -11,8 +15,8 @@ use rand::{
 use serde_json::Value;
 use warp::{filters::BoxedFilter, Filter, Reply};
 
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use std::{collections::HashMap, env};
 
 /// Result for command response
 enum Result {
@@ -41,12 +45,12 @@ pub enum PortOption {
     Random,
 }
 
-impl Into<u16> for PortOption {
-    fn into(self) -> u16 {
-        match self {
-            Self::Port7345 => 7345,
-            Self::Port9000 => 9000,
-            Self::Random => Self::into(rand::random()),
+impl From<PortOption> for u16 {
+    fn from(option: PortOption) -> Self {
+        match option {
+            PortOption::Port7345 => 7345,
+            PortOption::Port9000 => 9000,
+            PortOption::Random => PortOption::into(rand::random()),
         }
     }
 }
@@ -100,15 +104,19 @@ enum State {
     },
 }
 
-/// Emulated Device which tests will attempt to connect to
+/// Simulated Device which tests will attempt to connect to
 #[derive(Debug, Clone)]
-pub struct EmulatedDevice {
-    inner: Arc<EmulatedDeviceRef>,
+pub struct SimulatedDevice {
+    inner: Arc<SimulatedDeviceRef>,
 }
 
-impl EmulatedDevice {
-    pub fn build(port: PortOption, device_type: DeviceType) -> Self {
-        let name = "Emulated Device".to_string();
+impl SimulatedDevice {
+    pub fn new(port: PortOption, device_type: DeviceType) -> Self {
+        if env::var_os("RUST_LOG").is_none() {
+            env::set_var("RUST_LOG", "sim_api=info");
+        }
+
+        let name = "Simulated Device".to_string();
         let model = rand_data::string(6);
         let settings_root = device_type.settings_root();
         let port = port.into();
@@ -125,8 +133,8 @@ impl EmulatedDevice {
         let pkey = cert.serialize_private_key_pem();
         let cert = cert.serialize_pem().unwrap();
 
-        dbg!(Self {
-            inner: Arc::new(EmulatedDeviceRef {
+        Self {
+            inner: Arc::new(SimulatedDeviceRef {
                 name,
                 model,
                 settings_root,
@@ -138,13 +146,14 @@ impl EmulatedDevice {
                 current_input: RwLock::new(current_input),
                 cert,
                 pkey,
-            })
-        })
+            }),
+        }
     }
 
-    pub fn serve(&self) -> tokio::task::JoinHandle<()> {
+    pub fn serve(&self) {
         // Device Description Server
         tokio::spawn(warp::serve(self.description()).run(([127, 0, 0, 1], 8008)));
+        log::info!(target: "test::simulated_device::serve", "Starting Description server");
 
         // Device API Server
         tokio::spawn(
@@ -153,7 +162,8 @@ impl EmulatedDevice {
                 .key(self.inner.pkey.clone())
                 .cert(self.inner.cert.clone())
                 .run(([127, 0, 0, 1], self.inner.port)),
-        )
+        );
+        log::info!(target: "test::simulated_device::serve", "Starting API server");
     }
 
     fn description(&self) -> BoxedFilter<(impl Reply,)> {
@@ -173,6 +183,7 @@ impl EmulatedDevice {
                         .unwrap()
                 }
             })
+            .with(warp::log("test::simulated_device::description"))
             .boxed()
     }
 
@@ -181,7 +192,9 @@ impl EmulatedDevice {
             .or(self.power_state())
             .or(self.inputs())
             .or(self.device_info())
+            .or(self.read_settings())
             .or(self.uri_not_found())
+            .with(warp::log("test::simulated_device::api"))
             .boxed()
     }
 
@@ -224,6 +237,7 @@ impl EmulatedDevice {
             .and(
                 warp::put()
                     .and(warp::path::param())
+                    .and(warp::path::end())
                     .and(warp::body::json())
                     .map({
                         let device = self.clone();
@@ -244,9 +258,8 @@ impl EmulatedDevice {
 
     /// Input Commands
     fn inputs(&self) -> BoxedFilter<(impl Reply,)> {
-        warp::path("menu_native")
-            .and(warp::path("dynamic"))
-            .and(warp::path("tv_settings"))
+        warp::path!("menu_native" / "dynamic" / ..)
+            .and(warp::path(self.inner.settings_root.clone()))
             .and(warp::path("devices"))
             .and(
                 warp::path("name_input")
@@ -261,19 +274,14 @@ impl EmulatedDevice {
                     )
                     .or(warp::path("current_input")
                         .and(warp::path::end())
-                        .and(warp::get())
-                        .map({
+                        .and(warp::get().map({
                             let device = self.clone();
                             move || commands::current_input(device.clone())
-                        })
-                        .or(warp::path("current_input")
-                            .and(warp::path::end())
-                            .and(warp::put())
-                            .and(warp::body::json())
-                            .map({
-                                let device = self.clone();
-                                move |val: Value| commands::change_input(val, device.clone())
-                            }))),
+                        }))
+                        .or(warp::put().and(warp::body::json()).map({
+                            let device = self.clone();
+                            move |val: Value| commands::change_input(val, device.clone())
+                        }))),
             )
             .boxed()
     }
@@ -306,24 +314,17 @@ impl EmulatedDevice {
             .boxed()
     }
 
-    // /// Input Commands
-    // fn (&self) -> BoxedFilter<(impl Reply,)> {
-
-    // }
-
-    // /// Input Commands
-    // fn (&self) -> BoxedFilter<(impl Reply,)> {
-
-    // }
-
-    // /// Input Commands
-    // fn (&self) -> BoxedFilter<(impl Reply,)> {
-
-    // }
+    /// Read Settings Command
+    fn read_settings(&self) -> BoxedFilter<(impl Reply,)> {
+        // Dynamic Settings
+        warp::path("menu_native")
+            .and(settings::generate(self.inner.settings_root.clone()))
+            .boxed()
+    }
 }
 
 #[derive(Debug)]
-struct EmulatedDeviceRef {
+struct SimulatedDeviceRef {
     name: String,
     model: String,
     settings_root: String,
@@ -335,29 +336,4 @@ struct EmulatedDeviceRef {
     current_input: RwLock<String>,
     cert: String,
     pkey: String,
-}
-
-/// Random data helpers
-mod rand_data {
-    use rand::{distributions::Alphanumeric, Rng};
-
-    pub fn string(len: usize) -> String {
-        rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .map(char::from)
-            .take(len)
-            .collect()
-    }
-
-    pub fn uuid() -> String {
-        let rand_string = string(32);
-        format!(
-            "{}-{}-{}-{}-{}",
-            &rand_string[0..8],
-            &rand_string[8..12],
-            &rand_string[12..16],
-            &rand_string[16..20],
-            &rand_string[20..32]
-        )
-    }
 }
