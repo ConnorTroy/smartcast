@@ -15,8 +15,8 @@ use rand::{
 use serde_json::Value;
 use warp::{filters::BoxedFilter, Filter, Reply};
 
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::{collections::HashMap, env};
 
 /// Result for command response
 enum Result {
@@ -92,6 +92,57 @@ impl Distribution<DeviceType> for Standard {
     }
 }
 
+#[derive(Debug)]
+pub enum CodeSet {
+    Default,
+    Secondary,
+    Random,
+}
+
+impl CodeSet {
+    fn choose(self) -> Self {
+        match self {
+            Self::Random => rand::random(),
+            not_random => not_random,
+        }
+    }
+    fn hashmap(self) -> HashMap<u32, Vec<u32>> {
+        if matches!(self, Self::Random) {
+            return self.choose().hashmap();
+        }
+
+        let mut hash = HashMap::new();
+        hash.insert(2, vec![0, 1, 2, 3]);
+        match self {
+            Self::Default => {
+                hash.insert(3, vec![0, 1, 8, 7, 2]);
+            }
+            Self::Secondary => {
+                hash.insert(3, vec![0, 1, 3, 5, 2]);
+            }
+            _ => panic!("CodeSet not chosen"),
+        }
+        hash.insert(4, vec![0, 3, 4, 6, 8, 15]);
+        hash.insert(5, vec![0, 1, 2, 3, 4]);
+        hash.insert(6, vec![0, 2]);
+        hash.insert(7, vec![1]);
+        hash.insert(8, vec![0, 1, 2]);
+        hash.insert(9, vec![0]);
+        hash.insert(11, vec![0, 1, 2]);
+        hash
+    }
+}
+
+impl Distribution<CodeSet> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> CodeSet {
+        match rng.gen_range(0..2) {
+            0 => CodeSet::Default,
+            1 => CodeSet::Secondary,
+            _ => panic!("Rand CodeSet - Bad Range"),
+        }
+    }
+}
+
 /// Device state used for pairing
 #[derive(Debug, PartialEq)]
 enum State {
@@ -111,11 +162,7 @@ pub struct SimulatedDevice {
 }
 
 impl SimulatedDevice {
-    pub fn new(port: PortOption, device_type: DeviceType) -> Self {
-        if env::var_os("RUST_LOG").is_none() {
-            env::set_var("RUST_LOG", "sim_api=info");
-        }
-
+    pub fn new(port: PortOption, device_type: DeviceType, code_set: CodeSet) -> Self {
         let name = "Simulated Device".to_string();
         let model = rand_data::string(6);
         let settings_root = device_type.settings_root();
@@ -140,6 +187,7 @@ impl SimulatedDevice {
                 settings_root,
                 port,
                 uuid,
+                code_set: code_set.hashmap(),
                 state: RwLock::new(State::Ready),
                 powered_on: RwLock::new(false),
                 input_list,
@@ -192,7 +240,8 @@ impl SimulatedDevice {
             .or(self.power_state())
             .or(self.inputs())
             .or(self.device_info())
-            .or(self.read_settings())
+            .or(self.settings())
+            .or(self.virtual_remote())
             .or(self.uri_not_found())
             .with(warp::log("test::simulated_device::api"))
             .boxed()
@@ -314,11 +363,24 @@ impl SimulatedDevice {
             .boxed()
     }
 
-    /// Read Settings Command
-    fn read_settings(&self) -> BoxedFilter<(impl Reply,)> {
-        // Dynamic Settings
+    /// Read/Write Settings Commands
+    fn settings(&self) -> BoxedFilter<(impl Reply,)> {
         warp::path("menu_native")
             .and(settings::generate(self.inner.settings_root.clone()))
+            .boxed()
+    }
+
+    fn virtual_remote(&self) -> BoxedFilter<(impl Reply,)> {
+        warp::path("key_command")
+            .and(
+                warp::put()
+                    .and(warp::body::json())
+                    .map({
+                        let device = self.clone();
+                        move |val: Value| commands::virtual_remote(val, device.clone())
+                    })
+                    .or(self.expected_get()),
+            )
             .boxed()
     }
 }
@@ -330,6 +392,7 @@ struct SimulatedDeviceRef {
     settings_root: String,
     port: u16,
     uuid: String,
+    code_set: HashMap<u32, Vec<u32>>,
     state: RwLock<State>,
     powered_on: RwLock<bool>,
     input_list: HashMap<String, Input>,

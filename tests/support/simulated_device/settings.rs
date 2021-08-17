@@ -1,16 +1,10 @@
-// TODO: Remove Ignores
-#![allow(dead_code)]
-#![allow(unused)]
 use super::{commands, rand_data, Result};
 
 use smartcast::SliderInfo;
 
 use rand::Rng;
-use serde::{ser::SerializeStruct, Serialize};
 use serde_json::{json, Value};
 use warp::{filters::BoxedFilter, Filter, Reply};
-
-use std::collections::HashMap;
 
 pub const LIST_LEN: usize = 5;
 
@@ -65,7 +59,7 @@ impl Setting {
         let mut rng = rand::thread_rng();
         let mut elements = Vec::new();
         if matches!(setting_type, SettingType::List) || matches!(setting_type, SettingType::XList) {
-            for i in 0..LIST_LEN {
+            for _ in 0..LIST_LEN {
                 elements.push(rand_data::string(10));
             }
         }
@@ -239,8 +233,7 @@ impl Setting {
 
     fn static_as_string(&self) -> String {
         match self.setting_type {
-            SettingType::List
-            | SettingType::XList => {
+            SettingType::List | SettingType::XList => {
                 format!(
                     r#"
                     {{
@@ -268,8 +261,9 @@ impl Setting {
                     self.setting_type.to_string(),
                     status!(Result::Success),
                 )
-            },
+            }
             SettingType::Slider => {
+                let exp_slider = expected_slider_info();
                 format!(
                     r#"
                     {{
@@ -278,11 +272,11 @@ impl Setting {
                         {{
                             "CENTER": 0,
                             "CNAME": "{}",
-                            "DECMARKER": "low_end",
-                            "INCMARKER": "high_end",
-                            "INCREMENT": 1,
-                            "MAXIMUM": 100,
-                            "MINIMUM": -100,
+                            "DECMARKER": "{}",
+                            "INCMARKER": "{}",
+                            "INCREMENT": {},
+                            "MAXIMUM": {},
+                            "MINIMUM": {},
                             "NAME": "{}",
                             "TYPE": "T_VALUE_ABS_V1"
                         }}
@@ -297,6 +291,11 @@ impl Setting {
                     "#,
                     self.hashval,
                     self.cname,
+                    exp_slider.dec_marker,
+                    exp_slider.inc_marker,
+                    exp_slider.increment,
+                    exp_slider.max,
+                    exp_slider.min,
                     self.name,
                     status!(Result::Success),
                 )
@@ -318,7 +317,24 @@ impl Setting {
         serde_json::from_str(&strvalue).unwrap()
     }
 
-    pub fn dynamic_filter_read(&self) -> BoxedFilter<(impl Reply,)> {
+    fn dynamic_filter_write(&self) -> BoxedFilter<(impl Reply,)> {
+        let cname = warp::path(self.cname.clone());
+        let end = warp::path::end()
+            .and(warp::put())
+            .and(warp::body::json())
+            .map({
+                let setting = self.clone();
+                move |val| commands::write_setting(val, setting.clone())
+            });
+
+        if matches!(self.setting_type, SettingType::Menu(_)) {
+            end.boxed()
+        } else {
+            cname.and(end).boxed()
+        }
+    }
+
+    fn dynamic_filter_read(&self) -> BoxedFilter<(impl Reply,)> {
         let cname = warp::path(self.cname.clone());
         let end = warp::path::end().and(warp::get()).map({
             let setting = self.clone();
@@ -332,7 +348,7 @@ impl Setting {
         }
     }
 
-    pub fn static_filter(&self) -> BoxedFilter<(impl Reply,)> {
+    fn static_filter(&self) -> BoxedFilter<(impl Reply,)> {
         let cname = warp::path(self.cname.clone());
         let end = warp::path::end().and(warp::get()).map({
             let setting = self.clone();
@@ -378,12 +394,15 @@ pub fn generate(settings_root: String) -> BoxedFilter<(impl Reply,)> {
                 .or(value_setting.dynamic_filter_read())
                 .or(slider_setting.dynamic_filter_read())
                 .or(list_setting.dynamic_filter_read())
-                .or(x_list_setting.dynamic_filter_read()),
+                .or(x_list_setting.dynamic_filter_read())
+                .or(menu_setting
+                    .dynamic_filter_write()
+                    .or(value_setting.dynamic_filter_write())
+                    .or(slider_setting.dynamic_filter_write())
+                    .or(list_setting.dynamic_filter_write())
+                    .or(x_list_setting.dynamic_filter_write())),
         )
-        .or(
-            warp::path("static")
-            .and(warp::path(settings_root))
-            .and(
+        .or(warp::path("static").and(warp::path(settings_root)).and(
             menu_setting
                 .static_filter()
                 .or(value_setting.static_filter())
