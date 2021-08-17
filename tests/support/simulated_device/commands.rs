@@ -1,7 +1,7 @@
 use super::{settings::Setting, Input, Result, SimulatedDevice, State};
 
 use rand::Rng;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 /// Start pairing command
 pub fn pair_start(mut val: Value, device: SimulatedDevice) -> warp::reply::Json {
@@ -22,12 +22,12 @@ pub fn pair_start(mut val: Value, device: SimulatedDevice) -> warp::reply::Json 
             };
             format!(
                 r#"
-                "ITEM": {{
-                    "PAIRING_REQ_TOKEN": {},
-                    "CHALLENGE_TYPE": {}
-                }},
-                {}
-            "#,
+                    "ITEM": {{
+                        "PAIRING_REQ_TOKEN": {},
+                        "CHALLENGE_TYPE": {}
+                    }},
+                    {}
+                "#,
                 pair_token,
                 challenge,
                 status!(Result::Success)
@@ -113,7 +113,7 @@ pub fn pair_cancel(mut val: Value, device: SimulatedDevice) -> warp::reply::Json
         pair_token,
         device.inner.state.write(),
     ) {
-        (Ok(client_id), Ok(challenge), Ok(pin), Ok(pair_token), Ok(mut state))
+        (Ok(client_id), Ok(challenge), Ok(_pin), Ok(pair_token), Ok(mut state))
             if *state != State::Ready =>
         {
             match &*state {
@@ -125,7 +125,6 @@ pub fn pair_cancel(mut val: Value, device: SimulatedDevice) -> warp::reply::Json
                 } => {
                     if challenge != *exp_challenge
                         || client_id != *exp_id
-                        || pin != "1111"
                         || pair_token != *exp_pair
                     {
                         status!(Result::InvalidParameter)
@@ -133,9 +132,9 @@ pub fn pair_cancel(mut val: Value, device: SimulatedDevice) -> warp::reply::Json
                         *state = State::Ready;
                         format!(
                             r#"
-                            "ITEM": {{}},
-                            {}
-                        "#,
+                                "ITEM": {{}},
+                                {}
+                            "#,
                             status!(Result::Success)
                         )
                     }
@@ -160,19 +159,20 @@ pub fn power_state(device: SimulatedDevice) -> warp::reply::Json {
     log::info!(target: "test::simulated_device::commands", "POWER STATE");
     let res = format!(
         r#"
-    {{
-        "ITEMS": [{{
-            "TYPE": "T_VALUE_V1",
-            "CNAME": "power_mode",
-            "NAME": "Power Mode",
-            "VALUE": {}
-        }}],
-        "PARAMETERS": {{
-            "HASHONLY": "FALSE",
-            "FLAT": "TRUE",
-            "HELPTEXT": "FALSE"
-    }},
-    {}}}"#,
+        {{
+            "ITEMS": [{{
+                "TYPE": "T_VALUE_V1",
+                "CNAME": "power_mode",
+                "NAME": "Power Mode",
+                "VALUE": {}
+            }}],
+            "PARAMETERS": {{
+                "HASHONLY": "FALSE",
+                "FLAT": "TRUE",
+                "HELPTEXT": "FALSE"
+            }},
+            {}
+        }}"#,
         *device.inner.powered_on.read().unwrap() as u32,
         status!(Result::Success)
     );
@@ -335,24 +335,24 @@ pub fn device_info(device: SimulatedDevice) -> warp::reply::Json {
 
     let res = format!(
         r#"
-            {{
-                "ITEMS": [
-                    {{
-                        "VALUE": {{
-                            "CAST_NAME": "{}",
-                            "INPUTS": [{}],
-                            "MODEL_NAME": "{}",
-                            "SETTINGS_ROOT": "{}",
-                            "SYSTEM_INFO": {{
-                                "CHIPSET": 3,
-                                "SERIAL_NUMBER": "1",
-                                "VERSION": "1"
-                            }}
+        {{
+            "ITEMS": [
+                {{
+                    "VALUE": {{
+                        "CAST_NAME": "{}",
+                        "INPUTS": [{}],
+                        "MODEL_NAME": "{}",
+                        "SETTINGS_ROOT": "{}",
+                        "SYSTEM_INFO": {{
+                            "CHIPSET": 3,
+                            "SERIAL_NUMBER": "1",
+                            "VERSION": "1"
                         }}
                     }}
-                ],
-                {}
-            }}"#,
+                }}
+            ],
+            {}
+        }}"#,
         device.inner.name,
         inputs.join(","),
         device.inner.model,
@@ -375,19 +375,60 @@ pub fn read_setting_static(setting: Setting) -> warp::reply::Json {
     warp::reply::json(&setting.static_value())
 }
 
+/// Write settings command
 pub fn write_setting(mut val: Value, setting: Setting) -> warp::reply::Json {
     log::info!(target: "test::simulated_device::commands", "WRITE SETTINGS");
     let request = serde_json::from_value::<String>(val["REQUEST"].take());
     let hashval = serde_json::from_value::<u32>(val["HASHVAL"].take());
-    let value = val["VALUE"].take();
-    warp::reply::json(&json!(""))
+    let value = serde_json::from_value::<Value>(val["VALUE"].take());
+
+    // Command should not return error for bad input because the api library should handle that.
+    // Instead just test command formatting
+    let mut res = match (request, hashval, value) {
+        (Ok(request), Ok(hashval), Ok(_)) if request == "MODIFY" && hashval == setting.hashval => {
+            format!(
+                r#"
+                {{
+                    {}
+                }}"#,
+                status!(Result::Success),
+            )
+        }
+        _ => status!(Result::InvalidParameter),
+    };
+    res.insert(0, '{');
+    res.push('}');
+    let res: Value = serde_json::from_str(&res).unwrap();
+
+    warp::reply::json(&res)
+}
+
+/// Virtual remote commands
+pub fn virtual_remote(mut val: Value, device: SimulatedDevice) -> warp::reply::Json {
+    log::trace!(target: "test::simulated_device::commands", "VIRUTAL REMOTE");
+    let codeset = &device.inner.code_set;
+
+    let mut status = status!(Result::Success);
+    for key in val["KEYLIST"].as_array_mut().unwrap() {
+        let codeset_num = serde_json::from_value::<u32>(key["CODESET"].take());
+        let code = serde_json::from_value::<u32>(key["CODE"].take());
+        let action = serde_json::from_value::<String>(key["ACTION"].take());
+
+        match (codeset_num, code, action) {
+            (Ok(codeset_num), Ok(code), Ok(action))
+                if ["KEYDOWN", "KEYUP", "KEYPRESS"].contains(&action.as_str())
+                    && codeset.get(&codeset_num).unwrap().contains(&code) => {}
+            _ => {
+                status = status!(Result::InvalidParameter);
+                break;
+            }
+        };
+    }
+    let res: Value = serde_json::from_str(&format!("{{{}}}", status)).unwrap();
+
+    warp::reply::json(&res)
 }
 
 // TODO:
-// Get ESN command
-// Get Serial No. command
-// Get FW Version command
-// Virtual remote commands
-// Write settings command
 // Get app list command
 // Launch app command
