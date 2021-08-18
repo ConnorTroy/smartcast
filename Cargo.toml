@@ -9,6 +9,7 @@ authors = ["Connor Troy <connor.troy@tuta.io>"]
 edition = "2018"
 
 [dependencies]
+log = "0.4.14"
 reqwest = { version = "0.11.4", features = ["native-tls", "json"] }
 httparse = "1.4.1"
 regex = "1.5.4"
@@ -19,7 +20,6 @@ tokio = { version = "1.9.0", default-features = false, features = ["macros", "ne
 
 [dev-dependencies]
 pretty_env_logger = "0.4.0"
-log = "0.4.14"
 indoc = "1.0.3"
 chrono = "0.4.19"
 rand = "0.8.4"

@@ -108,10 +108,10 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Error::InvalidParameter => {
-                write!(f, "Invalid Parameter - probably means this api needs to be modified to work with your firmware")
+                write!(f, "Invalid Parameter")
             }
             Error::UriNotFound => {
-                write!(f, "URI not found - probably means this api needs to be modified to work with your firmware")
+                write!(f, "URI not found")
             }
             Error::MaxChallengesExceeded => {
                 write!(f, "Too many failed pair attempts")

@@ -15,6 +15,7 @@ pub const SSDP_URN: &str = "urn:dial-multiscreen-org:device:dial:1";
 pub const DEFAULT_SSDP_MAXTIME: usize = 3;
 
 pub(super) async fn uaudp_followup(location: &str) -> Result<Option<Device>> {
+    log::trace!("Device description followup");
     // Get device description xml
     let res = reqwest::get(location).await?.text().await?;
 
@@ -50,12 +51,16 @@ pub(super) async fn uaudp_followup(location: &str) -> Result<Option<Device>> {
                 Device::new(friendly_name, manufacturer, model_name, ip_addr, uuid).await?,
             ))
         }
-        _ => Ok(None),
+        _ => {
+            log::warn!("Device is not compatible");
+            Ok(None)
+        }
     }
 }
 
 // Returns a vector of Vizio Devices
 pub(super) async fn ssdp(host: &str, st: &str, mx: usize) -> Result<Vec<Device>> {
+    log::info!("Starting SSDP query");
     let body: &str = &[
         "M-SEARCH * HTTP/1.1",
         &format!("HOST: {}", host),
@@ -75,6 +80,7 @@ pub(super) async fn ssdp(host: &str, st: &str, mx: usize) -> Result<Vec<Device>>
     let mut rbuf = [0; 1024];
 
     // Get responses from devices
+    log::trace!("Wait for SSDP replies");
     let mut devices: Vec<Device> = Vec::new();
     while let Ok(Ok(len)) = timeout(Duration::from_secs(mx as u64), socket.recv(&mut rbuf)).await {
         // Parse headers for xml url
@@ -90,6 +96,7 @@ pub(super) async fn ssdp(host: &str, st: &str, mx: usize) -> Result<Vec<Device>>
             },
         )
         .unwrap();
+        log::info!("Received reply for location '{}'", location);
 
         if let Some(device) = uaudp_followup(location).await? {
             devices.push(device);
@@ -100,6 +107,7 @@ pub(super) async fn ssdp(host: &str, st: &str, mx: usize) -> Result<Vec<Device>>
         }
     }
 
+    log::info!("Found [{}] SmartCast Device(s)", devices.len());
     Ok(devices)
 }
 
