@@ -49,7 +49,7 @@ impl Future for Test {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Poll::Ready(_) = self.timeout.as_mut().poll(cx) {
+        if self.timeout.as_mut().poll(cx).is_ready() {
             panic!("Test took too long");
         }
 
@@ -85,12 +85,12 @@ impl Future for Simulate {
     type Output = Device;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Poll::Ready(_) = self.timeout.as_mut().poll(cx) {
+        if self.timeout.as_mut().poll(cx).is_ready() {
             panic!("Test took too long");
         }
 
         if !self.ready_to_connect {
-            self.ready_to_connect = matches!(self.startup.as_mut().poll(cx), Poll::Ready(_));
+            self.ready_to_connect = self.startup.as_mut().poll(cx).is_ready();
         }
 
         if self.ready_to_connect {
