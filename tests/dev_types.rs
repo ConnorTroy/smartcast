@@ -1,18 +1,28 @@
 mod support;
-use support::{connect_device, simulate, CodeSet, DeviceType, PortOption};
+use support::{CodeSet, DeviceType, PortOption, Test};
 
 #[tokio::test]
 async fn dev_type_tv() {
-    simulate(PortOption::Random, DeviceType::TV, CodeSet::Random).await;
-    let dev = connect_device().await;
-
-    dev.settings().await.unwrap();
+    Test::simulate(
+        PortOption::Random,
+        DeviceType::TV,
+        CodeSet::Random,
+        |dev| async move {
+            dev.settings().await.unwrap();
+        },
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn dev_type_soundbar() {
-    simulate(PortOption::Random, DeviceType::SoundBar, CodeSet::Random).await;
-    let dev = connect_device().await;
-
-    dev.settings().await.unwrap();
+    Test::simulate(
+        PortOption::Random,
+        DeviceType::SoundBar,
+        CodeSet::Random,
+        |dev| async move {
+            dev.settings().await.unwrap();
+        },
+    )
+    .await;
 }
