@@ -29,24 +29,6 @@ impl Response {
         Ok(serde_json::from_value::<DeviceInfo>(self.value["ITEMS"][0]["VALUE"].take()).unwrap())
     }
 
-    pub fn esn(mut self) -> Result<String> {
-        Ok(serde_json::from_value(
-            self.value["ITEMS"][0]["VALUE"].take(),
-        )?)
-    }
-
-    pub fn serial(mut self) -> Result<String> {
-        Ok(serde_json::from_value(
-            self.value["ITEMS"][0]["VALUE"].take(),
-        )?)
-    }
-
-    pub fn fw_version(mut self) -> Result<String> {
-        Ok(serde_json::from_value(
-            self.value["ITEMS"][0]["VALUE"].take(),
-        )?)
-    }
-
     pub fn current_input(mut self) -> Result<Input> {
         Ok(serde_json::from_value(self.value["ITEMS"][0].take())?)
     }
@@ -74,9 +56,9 @@ impl Response {
         )?)
     }
 
-    pub fn value(self) -> Result<Value> {
-        Ok(self.value)
-    }
+    // pub fn value(self) -> Result<Value> {
+    //     Ok(self.value)
+    // }
     // Write Settings
 }
 

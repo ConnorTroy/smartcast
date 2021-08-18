@@ -1,5 +1,5 @@
-use super::constant;
-use super::discover::{ssdp, uaudp_followup};
+
+use super::discover::{ssdp, uaudp_followup, SSDP_IP, DEFAULT_SSDP_MAXTIME};
 use super::error::{Error, Result};
 
 mod command;
@@ -8,12 +8,11 @@ mod remote;
 mod response;
 mod settings;
 
-pub use self::info::Input;
+pub use self::info::{DeviceInfo, Input};
 pub use self::remote::{Button, ButtonEvent};
 pub use self::settings::{EndpointBase, SettingType, SliderInfo, SubSetting};
 
 use self::command::{Command, CommandDetail};
-use self::info::DeviceInfo;
 use self::response::Response;
 use reqwest::Client;
 
@@ -21,6 +20,10 @@ use std::cell::{Cell, RefCell};
 use std::future::Future;
 use std::rc::Rc;
 use std::time::Duration;
+
+pub const DEFAULT_TIMEOUT: u64 = 3;
+#[allow(dead_code)]
+pub const PORT_OPTIONS: [u16; 2] = [7345, 9000];
 
 /// A SmartCast Device
 ///
@@ -35,7 +38,7 @@ pub struct Device {
 }
 
 impl Device {
-    pub(crate) async fn new<S: Into<String>>(
+    pub(super) async fn new<S: Into<String>>(
         name: S,
         manufacturer: S,
         model: S,
@@ -60,17 +63,16 @@ impl Device {
                 uuid: uuid.into(),
                 auth_token: RefCell::new(None),
                 client: reqwest::Client::builder()
-                    .timeout(Duration::from_secs(constant::DEFAULT_TIMEOUT))
+                    .timeout(Duration::from_secs(DEFAULT_TIMEOUT))
                     .danger_accept_invalid_certs(true)
-                    .build()
-                    .expect("Unable to build Reqwest Client"),
+                    .pool_idle_timeout(Some(Duration::from_secs(5)))
+                    .build()?,
             }),
         };
 
         device.initialize().await
     }
 
-    #[cfg(not(test))]
     async fn initialize(self) -> Result<Self> {
         // Check port options
         self.find_port().await?;
@@ -83,7 +85,7 @@ impl Device {
 
     #[cfg(not(test))]
     async fn find_port(&self) -> Result<()> {
-        let mut iter = constant::PORT_OPTIONS.iter().peekable();
+        let mut iter = PORT_OPTIONS.iter().peekable();
 
         loop {
             if let Some(port) = iter.next() {
@@ -105,11 +107,6 @@ impl Device {
         let device_info = self.device_info().await?;
         self.inner.settings_root.replace(device_info.settings_root);
         Ok(())
-    }
-
-    #[cfg(test)]
-    async fn initialize(self) -> Result<Self> {
-        Ok(self)
     }
 
     /// Connect to a SmartCast device from the device's IP Address
@@ -158,9 +155,9 @@ impl Device {
     /// ```
     pub async fn from_uuid<S: Into<String>>(uuid: S) -> Result<Self> {
         let mut device_vec = ssdp(
-            constant::SSDP_IP,
+            SSDP_IP,
             &format!("uuid:{}", uuid.into()),
-            constant::DEFAULT_SSDP_MAXTIME,
+            DEFAULT_SSDP_MAXTIME,
         )
         .await?;
         if !device_vec.is_empty() {
@@ -195,36 +192,6 @@ impl Device {
         self.inner.uuid.clone()
     }
 
-    /// Get device's ESN
-    pub async fn esn(&self) -> Result<String> {
-        let res = match self.send_command(CommandDetail::GetESN).await {
-            Ok(res) => res,
-            Err(Error::UriNotFound) => self.send_command(CommandDetail::GetESNAlt).await?,
-            Err(e) => return Err(e),
-        };
-        Ok(res.esn()?)
-    }
-
-    /// Get device's serial number
-    pub async fn serial(&self) -> Result<String> {
-        let res = match self.send_command(CommandDetail::GetSerial).await {
-            Ok(res) => res,
-            Err(Error::UriNotFound) => self.send_command(CommandDetail::GetSerialAlt).await?,
-            Err(e) => return Err(e),
-        };
-        Ok(res.serial()?)
-    }
-
-    /// Get device's firmware version
-    pub async fn version(&self) -> Result<String> {
-        let res = match self.send_command(CommandDetail::GetVersion).await {
-            Ok(res) => res,
-            Err(Error::UriNotFound) => self.send_command(CommandDetail::GetVersionAlt).await?,
-            Err(e) => return Err(e),
-        };
-        Ok(res.fw_version()?)
-    }
-
     /// If set, get the client's auth token for the device
     pub fn auth_token(&self) -> Option<String> {
         self.inner.auth_token.borrow().clone()
@@ -244,6 +211,13 @@ impl Device {
             }
         }
         Ok(())
+    }
+
+    /// Get various information about the device in the form of [`DeviceInfo`]
+    // TODO
+    pub async fn device_info(&self) -> Result<DeviceInfo> {
+        let res = self.send_command(CommandDetail::GetDeviceInfo).await?;
+        Ok(res.device_info()?)
     }
 
     /// Begin the pairing process
@@ -446,12 +420,6 @@ impl Device {
     }
 
     // TODO
-    pub(crate) async fn device_info(&self) -> Result<DeviceInfo> {
-        let res = self.send_command(CommandDetail::GetDeviceInfo).await?;
-        Ok(res.device_info()?)
-    }
-
-    // TODO
     // pub async fn current_app(&self) -> Result<()> {
     //     let res = self.send_command(CommandDetail::GetCurrentApp).await?;
     //     println!("{:#?}", res);
@@ -463,23 +431,33 @@ impl Device {
         settings::root(self.clone()).await
     }
 
-    pub async fn custom_command(
-        &self,
-        request_type: command::RequestType,
-        endpoint: String,
-        put_data: Option<serde_json::Value>,
-    ) -> Result<serde_json::Value> {
-        self.send_command(CommandDetail::Custom(request_type, endpoint, put_data))
-            .await?
-            .value()
-    }
+    // pub async fn custom_command(
+    //     &self,
+    //     request_type: command::RequestType,
+    //     endpoint: String,
+    //     put_data: Option<serde_json::Value>,
+    // ) -> Result<serde_json::Value> {
+    //     self.send_command(CommandDetail::Custom(request_type, endpoint, put_data))
+    //         .await?
+    //         .value()
+    // }
 
-    pub(crate) fn settings_root(&self) -> String {
+    pub(super) fn settings_root(&self) -> String {
         self.inner.settings_root.borrow().clone()
     }
 
     fn send_command(&self, detail: CommandDetail) -> impl Future<Output = Result<Response>> {
         Command::new(self.clone(), detail).send()
+    }
+
+    #[cfg(test)]
+    async fn find_port(&self) -> Result<()> {
+        Ok(())
+    }
+
+    #[cfg(test)]
+    async fn set_settings_root(&self) -> Result<()> {
+        Ok(())
     }
 
     #[cfg(test)]
