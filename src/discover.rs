@@ -10,6 +10,10 @@ use tokio::{
 use std::net::SocketAddr;
 use std::str;
 
+pub const SSDP_IP: &str = "239.255.255.250:1900";
+pub const SSDP_URN: &str = "urn:dial-multiscreen-org:device:dial:1";
+pub const DEFAULT_SSDP_MAXTIME: usize = 3;
+
 pub(super) async fn uaudp_followup(location: &str) -> Result<Option<Device>> {
     // Get device description xml
     let res = reqwest::get(location).await?.text().await?;
@@ -101,8 +105,8 @@ pub(super) async fn ssdp(host: &str, st: &str, mx: usize) -> Result<Vec<Device>>
 
 #[cfg(test)]
 mod tests {
-    use super::ssdp;
-    use crate::{constant::*, Device};
+    use super::{SSDP_URN, DEFAULT_SSDP_MAXTIME, ssdp};
+    use crate::{Device};
 
     use chrono::prelude::*;
     use http::Response;

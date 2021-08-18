@@ -38,9 +38,10 @@ mod constant;
 mod device;
 mod discover;
 mod error;
-use constant::*;
 
-pub use device::{Button, ButtonEvent, Device, Input, SettingType, SliderInfo, SubSetting};
+pub use device::{
+    Button, ButtonEvent, Device, DeviceInfo, Input, SettingType, SliderInfo, SubSetting,
+};
 pub use error::{Error, Result};
 
 use std::future::Future;
@@ -50,5 +51,5 @@ use std::future::Future;
 /// This function uses SSDP to find devices connected to the local network.
 /// It will return a [`Vec`] of [`Device`]s
 pub fn discover_devices() -> impl Future<Output = Result<Vec<Device>>> {
-    discover::ssdp(SSDP_IP, SSDP_URN, DEFAULT_SSDP_MAXTIME)
+    discover::ssdp(discover::SSDP_IP, discover::SSDP_URN, discover::DEFAULT_SSDP_MAXTIME)
 }
