@@ -34,7 +34,6 @@
 //! - [x] Virtual remote commands
 //! - [ ] Writeable settings
 //! - [ ] App launching
-mod constant;
 mod device;
 mod discover;
 mod error;
@@ -51,5 +50,9 @@ use std::future::Future;
 /// This function uses SSDP to find devices connected to the local network.
 /// It will return a [`Vec`] of [`Device`]s
 pub fn discover_devices() -> impl Future<Output = Result<Vec<Device>>> {
-    discover::ssdp(discover::SSDP_IP, discover::SSDP_URN, discover::DEFAULT_SSDP_MAXTIME)
+    discover::ssdp(
+        discover::SSDP_IP,
+        discover::SSDP_URN,
+        discover::DEFAULT_SSDP_MAXTIME,
+    )
 }

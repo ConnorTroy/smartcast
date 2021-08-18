@@ -39,7 +39,7 @@ pub enum SettingType {
     Other(String),
 }
 
-/// Deserializer for [`SettingsType`]
+/// Deserializer for [`SettingType`]
 impl<'de> Deserialize<'de> for SettingType {
     fn deserialize<D>(deserializer: D) -> StdResult<SettingType, D::Error>
     where
@@ -86,7 +86,7 @@ pub struct SliderInfo {
 /// You can get the root of a [`Device`]s settings using the [`settings()`](Device::settings) method.
 /// Propagate through the settings using [`expand()`](SubSetting::expand).
 ///
-/// A `SubSetting` [`SettingsType`] can correspond any one of the following:
+/// A `SubSetting` [`SettingType`] can correspond any one of the following:
 /// * `Menu` - an object which contains settings or more menus
 /// * `Value` - a setting with a set value
 /// * `Slider` - a setting with possible values on a scale
@@ -150,7 +150,7 @@ pub struct SliderInfo {
 pub struct SubSetting {
     #[serde(rename = "CNAME")]
     endpoint: String,
-    hashval: u32,
+    hashval: Option<u32>,
     #[serde(deserialize_with = "string_to_bool", default)]
     hidden: bool,
     name: String,
@@ -229,7 +229,8 @@ impl SubSetting {
     /// # }
     /// ```
     pub async fn expand(&self) -> Result<Vec<SubSetting>> {
-        let res = self.dynamic_response().await?;
+        // TODO: leaf uri block
+        let res = self.dynamic_response().await.unwrap();
         let mut settings = res.settings()?;
 
         // Add device reference and update endpoint
@@ -330,6 +331,7 @@ impl SubSetting {
     /// Change the value of the setting.
     ///
     /// Returns an error if:
+    /// * The setting is `read-only`.
     /// * The value passed in is not the same type as the value currently in the setting.
     /// * In the case of a `Slider`, the value passed in is higher than the max or lower than the min.
     /// * In the case of a `List` or `XList`, the value passed in is not present in the setting's [`Elements`](Self::elements).
@@ -337,11 +339,11 @@ impl SubSetting {
     ///
     /// # Example
     /// ```
-    /// // TODO
+    /// todo!();
     /// ```
+    #[allow(unused)] // Temp - TODO: remove
     pub async fn write<T>(&self, new_value: T) -> Result<()> {
-        // TODO
-        Ok(())
+        todo!();
     }
 
     /// If the setting object is a `Slider`, get the slider info. See [`SliderInfo`].
@@ -396,7 +398,7 @@ impl SubSetting {
         }
     }
 
-    /// If the setting object is a `List` or `XList`, get its elements. See [`SettingsType`].
+    /// If the setting object is a `List` or `XList`, get its elements. See [`SettingType`].
     ///
     /// # Example
     ///
@@ -447,7 +449,7 @@ impl SubSetting {
         }
     }
 
-    pub(crate) fn endpoint(&self) -> String {
+    pub(super) fn endpoint(&self) -> String {
         self.endpoint.clone()
     }
 
@@ -477,7 +479,7 @@ impl SubSetting {
     async fn root(device: Device) -> Result<Vec<SubSetting>> {
         let root = SubSetting {
             endpoint: format!("/{}", device.settings_root()),
-            hashval: 0,
+            hashval: None,
             hidden: false,
             name: "".into(),
             readonly: false,

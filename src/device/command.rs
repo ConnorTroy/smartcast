@@ -13,6 +13,7 @@ pub enum RequestType {
     Put,
 }
 
+#[allow(unused)] // Temp - TODO: remove
 pub enum CommandDetail {
     StartPairing {
         client_name: String,
@@ -32,12 +33,6 @@ pub enum CommandDetail {
     GetPowerState,
     GetDeviceInfo,
     RemoteButtonPress(Vec<ButtonEvent>),
-    GetESN,
-    GetSerial,
-    GetVersion,
-    GetESNAlt,
-    GetSerialAlt,
-    GetVersionAlt,
     GetCurrentInput,
     GetInputList,
     ChangeInput {
@@ -55,26 +50,28 @@ impl CommandDetail {
     /// Get the endpoint of the command
     pub fn endpoint(&self, settings_root: String) -> String {
         match self {
-            Self::StartPairing{..}                  => "/pairing/start".into(),
-            Self::FinishPairing{..}                 => "/pairing/pair".into(),
-            Self::CancelPairing{..}                 => "/pairing/cancel".into(),
-            Self::GetPowerState                     => "/state/device/power_mode".into(),
-            Self::GetDeviceInfo                     => "/state/device/deviceinfo".into(),
-            Self::RemoteButtonPress{..}             => "/key_command/".into(),
-            Self::GetESN                            => format!("/menu_native/dynamic/{}/system/system_information/uli_information/esn", settings_root),
-            Self::GetSerial                         => format!("/menu_native/dynamic/{}/system/system_information/tv_information/serial_number", settings_root),
-            Self::GetVersion                        => format!("/menu_native/dynamic/{}/system/system_information/tv_information/version", settings_root),
-            Self::GetESNAlt                         => format!("/menu_native/dynamic/{}/admin_and_privacy/system_information/uli_information/esn", settings_root),
-            Self::GetSerialAlt                      => format!("/menu_native/dynamic/{}/admin_and_privacy/system_information/tv_information/serial_number", settings_root),
-            Self::GetVersionAlt                     => format!("/menu_native/dynamic/{}/admin_and_privacy/system_information/tv_information/version", settings_root),
-            Self::GetCurrentInput                   => format!("/menu_native/dynamic/{}/devices/current_input", settings_root),
-            Self::GetInputList                      => format!("/menu_native/dynamic/{}/devices/name_input", settings_root),
-            Self::ChangeInput{..}                   => format!("/menu_native/dynamic/{}/devices/current_input", settings_root),
-            Self::GetCurrentApp                     => "/app/current".into(),
-            Self::LaunchApp(_)                      => "/app/launch".into(),
-            Self::ReadSettings(base, endpoint)      => base.as_str() + endpoint,
-            // Self::WriteSettings             => "/menu_native/dynamic/tv_settings/SETTINGS_CNAME/ITEMS_CNAME",
-            Self::Custom(_, endpoint, _)           => endpoint.into(),
+            Self::StartPairing { .. } => "/pairing/start".into(),
+            Self::FinishPairing { .. } => "/pairing/pair".into(),
+            Self::CancelPairing { .. } => "/pairing/cancel".into(),
+            Self::GetPowerState => "/state/device/power_mode".into(),
+            Self::GetDeviceInfo => "/state/device/deviceinfo".into(),
+            Self::RemoteButtonPress { .. } => "/key_command/".into(),
+            Self::GetCurrentInput => format!(
+                "/menu_native/dynamic/{}/devices/current_input",
+                settings_root
+            ),
+            Self::GetInputList => {
+                format!("/menu_native/dynamic/{}/devices/name_input", settings_root)
+            }
+            Self::ChangeInput { .. } => format!(
+                "/menu_native/dynamic/{}/devices/current_input",
+                settings_root
+            ),
+            Self::GetCurrentApp => "/app/current".into(),
+            Self::LaunchApp(_) => "/app/launch".into(),
+            Self::ReadSettings(base, endpoint) => base.as_str() + endpoint,
+            // Self::WriteSettings                 => "/menu_native/dynamic/tv_settings/SETTINGS_CNAME/ITEMS_CNAME",
+            Self::Custom(_, endpoint, _) => endpoint.into(),
         }
     }
 
@@ -90,12 +87,6 @@ impl CommandDetail {
             // Self::WriteSettings     => RequestType::Put,
             Self::GetPowerState
             | Self::GetDeviceInfo
-            | Self::GetESN
-            | Self::GetSerial
-            | Self::GetVersion
-            | Self::GetESNAlt
-            | Self::GetSerialAlt
-            | Self::GetVersionAlt
             | Self::GetCurrentInput
             | Self::GetInputList
             | Self::GetCurrentApp
