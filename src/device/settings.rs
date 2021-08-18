@@ -229,6 +229,7 @@ impl SubSetting {
     /// # }
     /// ```
     pub async fn expand(&self) -> Result<Vec<SubSetting>> {
+        log::trace!("SubSetting Expand");
         // TODO: leaf uri block
         let res = self.dynamic_response().await.unwrap();
         let mut settings = res.settings()?;
@@ -343,6 +344,7 @@ impl SubSetting {
     /// ```
     #[allow(unused)] // Temp - TODO: remove
     pub async fn write<T>(&self, new_value: T) -> Result<()> {
+        log::trace!("Write SubSetting");
         todo!();
     }
 
@@ -388,6 +390,7 @@ impl SubSetting {
     /// # }
     /// ```
     pub async fn slider_info(&self) -> Result<Option<SliderInfo>> {
+        log::trace!("Get Slider Info");
         if self.object_type == SettingType::Slider {
             match self.static_response().await?.slider_info() {
                 Ok(info) => Ok(Some(info)),
@@ -439,6 +442,7 @@ impl SubSetting {
     /// # }
     /// ```
     pub async fn elements(&self) -> Result<Option<Vec<String>>> {
+        log::trace!("Get Elements");
         if self.object_type == SettingType::List || self.object_type == SettingType::XList {
             match self.dynamic_response().await?.elements() {
                 Ok(elements) => Ok(Some(elements)),
@@ -455,6 +459,7 @@ impl SubSetting {
 
     /// Get Setting value at the dynamic endpoint
     async fn dynamic_response(&self) -> Result<Response> {
+        log::trace!("Get Dynamic Response");
         let device = self.device.clone().unwrap();
         Ok(device
             .send_command(CommandDetail::ReadSettings(
@@ -466,6 +471,7 @@ impl SubSetting {
 
     /// Get setting value at the static endpoint
     async fn static_response(&self) -> Result<Response> {
+        log::trace!("Get Static Response");
         let device = self.device.clone().unwrap();
         Ok(device
             .send_command(CommandDetail::ReadSettings(
@@ -477,6 +483,7 @@ impl SubSetting {
 
     /// Get the top level settings menu
     async fn root(device: Device) -> Result<Vec<SubSetting>> {
+        log::trace!("Get Settings Root");
         let root = SubSetting {
             endpoint: format!("/{}", device.settings_root()),
             hashval: None,

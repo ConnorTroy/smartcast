@@ -20,9 +20,9 @@ use std::future::Future;
 use std::rc::Rc;
 use std::time::Duration;
 
-pub const DEFAULT_TIMEOUT: u64 = 3;
 #[allow(dead_code)]
 pub const PORT_OPTIONS: [u16; 2] = [7345, 9000];
+pub const DEFAULT_TIMEOUT: u64 = 3;
 
 /// A SmartCast Device
 ///
@@ -44,6 +44,8 @@ impl Device {
         ip_addr: S,
         uuid: S,
     ) -> Result<Self> {
+        log::trace!("Attempting to connect to API");
+
         // Workaround for testing issues on loopback
         let ip_addr = match ip_addr.into().as_str() {
             "127.0.0.1" => "localhost",
@@ -73,6 +75,7 @@ impl Device {
     }
 
     async fn initialize(self) -> Result<Self> {
+        log::trace!("Initializing");
         // Check port options
         self.find_port().await?;
 
@@ -88,6 +91,8 @@ impl Device {
 
         loop {
             if let Some(port) = iter.next() {
+                log::trace!("Attempt connection to port {}", port);
+
                 self.inner.port.replace(*port);
                 let res = self.device_info().await;
                 match res {
@@ -96,6 +101,7 @@ impl Device {
                     Err(e) => return Err(e),
                 }
             } else {
+                log::error!("Port iterator has been expended");
                 panic!("Reached end of port iterator");
             }
         }
@@ -104,6 +110,8 @@ impl Device {
     #[cfg(not(test))]
     async fn set_settings_root(&self) -> Result<()> {
         let device_info = self.device_info().await?;
+
+        log::trace!("Set settings root URI");
         self.inner.settings_root.replace(device_info.settings_root);
         Ok(())
     }
@@ -125,14 +133,15 @@ impl Device {
     /// # }
     /// ```
     pub async fn from_ip<S: Into<String>>(ip_addr: S) -> Result<Self> {
-        match uaudp_followup(&format!(
-            "http://{}:8008/ssdp/device-desc.xml",
-            ip_addr.into()
-        ))
-        .await?
-        {
+        let ip_addr: String = ip_addr.into();
+        log::info!("Attempt API connection to IP '{}'", ip_addr);
+
+        match uaudp_followup(&format!("http://{}:8008/ssdp/device-desc.xml", ip_addr)).await? {
             Some(device) => Ok(device),
-            None => Err(Error::Other("Device not found".into())),
+            None => {
+                log::error!("Device not found at '{}'", ip_addr);
+                Err(Error::Other("Device not found".into())) // Placeholder - TODO
+            }
         }
     }
 
@@ -153,16 +162,15 @@ impl Device {
     /// # }
     /// ```
     pub async fn from_uuid<S: Into<String>>(uuid: S) -> Result<Self> {
-        let mut device_vec = ssdp(
-            SSDP_IP,
-            &format!("uuid:{}", uuid.into()),
-            DEFAULT_SSDP_MAXTIME,
-        )
-        .await?;
+        let uuid: String = uuid.into();
+        log::info!("Attempt API connection to device with UUID '{}'", uuid);
+
+        let mut device_vec = ssdp(SSDP_IP, &format!("uuid:{}", uuid), DEFAULT_SSDP_MAXTIME).await?;
         if !device_vec.is_empty() {
             Ok(device_vec.swap_remove(0))
         } else {
-            Err(Error::Other("Device not found".into()))
+            log::error!("Device not found with UUID '{}'", uuid);
+            Err(Error::Other("Device not found".into())) // Placeholder - TODO
         }
     }
 
@@ -198,13 +206,17 @@ impl Device {
 
     /// If previously paired, you may manually set the client's auth token for the device.
     pub async fn set_auth_token<S: Into<String>>(&self, token: S) -> Result<()> {
+        let token: String = token.into();
+        log::trace!("Set auth token '{}'", token);
+
         let old_token = self.auth_token();
-        self.inner.auth_token.replace(Some(token.into()));
+        self.inner.auth_token.replace(Some(token));
 
         // Send a command which requires pairing to test token
         match self.current_input().await {
             Ok(_) => {}
             Err(e) => {
+                log::warn!("Auth token was rejected by the device, reverting");
                 self.inner.auth_token.replace(old_token);
                 return Err(e);
             }
@@ -215,8 +227,9 @@ impl Device {
     /// Get various information about the device in the form of [`DeviceInfo`]
     // TODO
     pub async fn device_info(&self) -> Result<DeviceInfo> {
+        log::trace!("Get Device Info");
         let res = self.send_command(CommandDetail::GetDeviceInfo).await?;
-        Ok(res.device_info()?)
+        res.device_info()
     }
 
     /// Begin the pairing process
@@ -233,14 +246,19 @@ impl Device {
         client_name: S,
         client_id: S,
     ) -> Result<(u32, u32, String)> {
+        let client_name: String = client_name.into();
         let client_id: String = client_id.into();
+        log::trace!("Begin Pairing");
+        log::debug!("client_name: {}, client_id: {}", client_name, client_id);
+
         let res = self
             .send_command(CommandDetail::StartPairing {
-                client_name: client_name.into(),
+                client_name,
                 client_id: client_id.clone(),
             })
             .await?;
         let (token, challenge) = res.pairing()?;
+        log::info!("Pairing started");
         Ok((token, challenge, client_id))
     }
 
@@ -284,6 +302,14 @@ impl Device {
         let (pairing_token, challenge, client_id) = pairing_data;
         // Strip non digits
         let pin: String = pin.into().chars().filter(|c| c.is_digit(10)).collect();
+        log::trace!("Finsh Pairing");
+        log::debug!(
+            "pairing_token: {}, challenge: {}, client_id: {}, pin: {}",
+            pairing_token,
+            challenge,
+            client_id,
+            pin
+        );
 
         let res = self
             .send_command(CommandDetail::FinishPairing {
@@ -293,7 +319,8 @@ impl Device {
                 response_value: pin,
             })
             .await?;
-        Ok(res.auth_token()?)
+        log::info!("Pairing complete");
+        res.auth_token()
     }
 
     /// Cancel the pairing process
@@ -323,19 +350,30 @@ impl Device {
     /// ```
     pub async fn cancel_pair(&self, pairing_data: (u32, u32, String)) -> Result<()> {
         let (pairing_token, challenge, client_id) = pairing_data;
+        log::trace!("Cancel Pairing");
+        log::debug!(
+            "pairing_token: {}, challenge: {}, client_id: {}",
+            pairing_token,
+            challenge,
+            client_id
+        );
+
         self.send_command(CommandDetail::CancelPairing {
             client_id,
             pairing_token,
             challenge,
         })
         .await?;
+
+        log::info!("Pairing canceled");
         Ok(())
     }
 
     /// Check whether the device is powered on
     pub async fn is_powered_on(&self) -> Result<bool> {
+        log::trace!("Power status");
         let res = self.send_command(CommandDetail::GetPowerState).await?;
-        Ok(res.power_state()?)
+        res.power_state()
     }
 
     /// Emulates a button press on a remote control
@@ -370,6 +408,9 @@ impl Device {
     /// ```
     pub async fn button_event<V: Into<Vec<ButtonEvent>>>(&self, buttons: V) -> Result<()> {
         let button_vec: Vec<ButtonEvent> = buttons.into();
+        log::trace!("Button Event");
+        log::debug!("{:?}", button_vec);
+
         self.send_command(CommandDetail::RemoteButtonPress(button_vec))
             .await?;
         Ok(())
@@ -377,14 +418,16 @@ impl Device {
 
     /// Get the current device input
     pub async fn current_input(&self) -> Result<Input> {
+        log::trace!("Get Current Input");
         let res = self.send_command(CommandDetail::GetCurrentInput).await?;
-        Ok(res.current_input()?)
+        res.current_input()
     }
 
     /// Get list of available inputs
     pub async fn list_inputs(&self) -> Result<Vec<Input>> {
+        log::trace!("List Inputs");
         let res = self.send_command(CommandDetail::GetInputList).await?;
-        Ok(res.input_list()?)
+        res.input_list()
     }
 
     /// Changes the input of the device
@@ -410,8 +453,12 @@ impl Device {
     /// Note: the input's default name must be passed in, not the input's custom name -- e.g.
     /// "HDMI-2" instead of "Playstation 4"
     pub async fn change_input<S: Into<String>>(&self, name: S) -> Result<()> {
+        let name: String = name.into();
+        log::trace!("Change Input");
+        log::debug!("name: {}", name);
+
         self.send_command(CommandDetail::ChangeInput {
-            name: name.into(),
+            name,
             hashval: self.current_input().await?.hashval(),
         })
         .await?;
@@ -427,6 +474,7 @@ impl Device {
 
     /// Get the root of the device's [`Settings`](SubSetting).
     pub async fn settings(&self) -> Result<Vec<SubSetting>> {
+        log::trace!("Settings Root");
         settings::root(self.clone()).await
     }
 
@@ -446,6 +494,7 @@ impl Device {
     }
 
     fn send_command(&self, detail: CommandDetail) -> impl Future<Output = Result<Response>> {
+        log::debug!("send_command detail: '{:?}'", detail);
         Command::new(self.clone(), detail).send()
     }
 

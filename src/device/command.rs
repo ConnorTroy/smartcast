@@ -14,6 +14,7 @@ pub enum RequestType {
 }
 
 #[allow(unused)] // Temp - TODO: remove
+#[derive(Debug)]
 pub enum CommandDetail {
     StartPairing {
         client_name: String,
@@ -125,7 +126,7 @@ impl Command {
 
         let res = {
             // Request building
-            let req = match self.detail.request_type() {
+            let mut req = match self.detail.request_type() {
                 RequestType::Get => client.get(url),
                 RequestType::Put => {
                     client
@@ -138,10 +139,11 @@ impl Command {
             };
             // Add auth token header
             if let Some(token) = &device.auth_token() {
-                req.header("Auth", token.to_string())
-            } else {
-                req
+                req = req.header("Auth", token.to_string())
             }
+            log::debug!("req: {:?}", req);
+
+            req
         }
         // Request send
         .send()
