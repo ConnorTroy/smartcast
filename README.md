@@ -33,4 +33,3 @@ async fn example_main() -> Result<(), smartcast::Error> {
 - [x] Virtual remote commands
 - [ ] Writeable settings
 - [ ] App launching
-- [ ] Testing

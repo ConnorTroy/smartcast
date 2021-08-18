@@ -3,6 +3,7 @@ use serde::ser::{Serialize, SerializeStruct, Serializer};
 /// Button interactions used in [`button_event()`](super::Device::button_event)
 ///
 /// Must include a [`Button`] to specify what you want to interact with
+#[derive(Debug)]
 pub enum ButtonEvent {
     /// Hold the button down
     KeyDown(Button),
@@ -53,7 +54,7 @@ impl Serialize for ButtonEvent {
 
 /// "Buttons" you can interact with using [`ButtonEvent`]
 #[allow(unused)]
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum Button {
     /// Seek Forward
     SeekFwd,

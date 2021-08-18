@@ -1,14 +1,23 @@
 use serde::{de, Deserialize, Deserializer};
 
 #[derive(Debug)]
+/// Various infomation about the device returned by [`device_info()`](super::Device::device_info)
+// TODO:
 pub struct DeviceInfo {
+    /// Device name as known by Google Cast
     pub cast_name: String,
+    /// Physical inputs on the device
     pub inputs: Vec<String>,
+    /// Device's model name
     pub model_name: String,
-    pub settings_root: String,
-    pub chipset: u32,
+    /// Device's serial number
     pub serial_number: String,
+    /// Device's firmware version
     pub fw_version: String,
+    /// URI of root settings
+    pub(super) settings_root: String,
+    /// Device's chipset version
+    pub(super) chipset: u32,
 }
 
 impl<'de> Deserialize<'de> for DeviceInfo {
@@ -51,6 +60,7 @@ impl<'de> Deserialize<'de> for DeviceInfo {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 /// Input on the device
+// TODO:
 pub struct Input {
     name: String,
     #[serde(rename(deserialize = "VALUE"))]
@@ -70,7 +80,7 @@ impl Input {
         self.friendly_name.clone()
     }
 
-    pub(crate) fn hashval(&self) -> u32 {
+    pub(super) fn hashval(&self) -> u32 {
         self.hashval
     }
 }

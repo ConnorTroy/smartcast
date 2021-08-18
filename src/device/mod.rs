@@ -1,5 +1,4 @@
-
-use super::discover::{ssdp, uaudp_followup, SSDP_IP, DEFAULT_SSDP_MAXTIME};
+use super::discover::{ssdp, uaudp_followup, DEFAULT_SSDP_MAXTIME, SSDP_IP};
 use super::error::{Error, Result};
 
 mod command;

@@ -105,8 +105,8 @@ pub(super) async fn ssdp(host: &str, st: &str, mx: usize) -> Result<Vec<Device>>
 
 #[cfg(test)]
 mod tests {
-    use super::{SSDP_URN, DEFAULT_SSDP_MAXTIME, ssdp};
-    use crate::{Device};
+    use super::{ssdp, DEFAULT_SSDP_MAXTIME, SSDP_URN};
+    use crate::Device;
 
     use chrono::prelude::*;
     use http::Response;
