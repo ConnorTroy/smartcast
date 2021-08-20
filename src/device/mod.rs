@@ -9,15 +9,17 @@ mod settings;
 
 pub use self::info::{DeviceInfo, Input};
 pub use self::remote::{Button, ButtonEvent};
-pub use self::settings::{EndpointBase, SettingType, SliderInfo, SubSetting};
+pub use self::settings::{SettingType, SliderInfo, SubSetting};
 
 use self::command::{Command, CommandDetail};
 use self::response::Response;
-use reqwest::Client;
+use self::settings::EndpointBase;
 
-use std::cell::{Cell, RefCell};
+use reqwest::Client;
+use tokio::sync::RwLock;
+
 use std::future::Future;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[allow(dead_code)]
@@ -30,10 +32,10 @@ pub const DEFAULT_TIMEOUT: u64 = 3;
 /// local network using [`discover_devices()`](crate::discover_devices). You can also connect directly
 /// using [`Device::from_ip()`](Device::from_ip) or [`Device::from_uuid()`](Device::from_uuid).
 ///
-/// Note that cloning `Device` is zero-cost but not thread safe.
+/// Note that cloning `Device` is zero-cost and thread safe.
 #[derive(Debug, Clone)]
 pub struct Device {
-    inner: Rc<DeviceRef>,
+    inner: Arc<DeviceRef>,
 }
 
 impl Device {
@@ -54,15 +56,15 @@ impl Device {
         .to_string();
 
         let device = Self {
-            inner: Rc::new(DeviceRef {
+            inner: Arc::new(DeviceRef {
                 name: name.into(),
                 manufacturer: manufacturer.into(),
                 model: model.into(),
-                settings_root: RefCell::new(String::new()),
+                settings_root: RwLock::new(String::new()),
                 ip_addr,
-                port: Cell::new(0),
+                port: RwLock::new(0),
                 uuid: uuid.into(),
-                auth_token: RefCell::new(None),
+                auth_token: RwLock::new(None),
                 client: reqwest::Client::builder()
                     .timeout(Duration::from_secs(DEFAULT_TIMEOUT))
                     .danger_accept_invalid_certs(true)
@@ -93,7 +95,12 @@ impl Device {
             if let Some(port) = iter.next() {
                 log::trace!("Attempt connection to port {}", port);
 
-                self.inner.port.replace(*port);
+                {
+                    // Code block to drop lock
+                    let mut current_port = self.inner.port.write().await;
+                    *current_port = *port;
+                }
+
                 let res = self.device_info().await;
                 match res {
                     Err(Error::Reqwest(e)) if e.is_connect() && iter.peek().is_some() => {}
@@ -110,9 +117,11 @@ impl Device {
     #[cfg(not(test))]
     async fn set_settings_root(&self) -> Result<()> {
         let device_info = self.device_info().await?;
-
         log::trace!("Set settings root URI");
-        self.inner.settings_root.replace(device_info.settings_root);
+
+        let mut settings_root = self.inner.settings_root.write().await;
+        *settings_root = device_info.settings_root;
+
         Ok(())
     }
 
@@ -191,7 +200,14 @@ impl Device {
 
     /// Get device's API port
     pub fn port(&self) -> u16 {
-        self.inner.port.get()
+        if let Ok(port) = self.inner.port.try_read() {
+            *port
+        } else {
+            // Port shouldn't ever be written outside initialization
+            // so use try_read() to avoid awaiting and panic if it
+            // is locked
+            panic!("Unable to unlock port for read");
+        }
     }
 
     /// Get device's UUID
@@ -200,24 +216,32 @@ impl Device {
     }
 
     /// If set, get the client's auth token for the device
-    pub fn auth_token(&self) -> Option<String> {
-        self.inner.auth_token.borrow().clone()
+    pub async fn auth_token(&self) -> Option<String> {
+        self.inner.auth_token.read().await.clone()
     }
 
     /// If previously paired, you may manually set the client's auth token for the device.
-    pub async fn set_auth_token<S: Into<String>>(&self, token: S) -> Result<()> {
-        let token: String = token.into();
-        log::trace!("Set auth token '{}'", token);
+    pub async fn set_auth_token<S: Into<String>>(&self, new_token: S) -> Result<()> {
+        let new_token: String = new_token.into();
+        log::trace!("Set auth token '{}'", new_token);
 
-        let old_token = self.auth_token();
-        self.inner.auth_token.replace(Some(token));
+        let old_token = self.auth_token().await;
+
+        {
+            let mut token = self.inner.auth_token.write().await;
+            *token = Some(new_token);
+        }
 
         // Send a command which requires pairing to test token
         match self.current_input().await {
             Ok(_) => {}
             Err(e) => {
                 log::warn!("Auth token was rejected by the device, reverting");
-                self.inner.auth_token.replace(old_token);
+                {
+                    let mut token = self.inner.auth_token.write().await;
+                    *token = old_token;
+                }
+
                 return Err(e);
             }
         }
@@ -490,7 +514,13 @@ impl Device {
     // }
 
     pub(super) fn settings_root(&self) -> String {
-        self.inner.settings_root.borrow().clone()
+        if let Ok(settings_root) = self.inner.settings_root.try_read() {
+            settings_root.clone()
+        } else {
+            // Same as port(), settings_root shouldn't ever be written outside initialization
+            // so use try_read() to avoid awaiting and panic if it is locked
+            panic!("Unable to settings root for read");
+        }
     }
 
     fn send_command(&self, detail: CommandDetail) -> impl Future<Output = Result<Response>> {
@@ -519,11 +549,11 @@ pub struct DeviceRef {
     name: String,
     manufacturer: String,
     model: String,
-    settings_root: RefCell<String>,
+    settings_root: RwLock<String>,
     ip_addr: String,
-    port: Cell<u16>,
+    port: RwLock<u16>,
     uuid: String,
-    auth_token: RefCell<Option<String>>,
+    auth_token: RwLock<Option<String>>,
     client: Client,
 }
 
@@ -532,14 +562,13 @@ impl DeviceRef {}
 #[cfg(test)]
 impl PartialEq for Device {
     fn eq(&self, other: &Self) -> bool {
-        let found = self.inner.clone();
-        let expected = other.inner.clone();
-        found.name == expected.name
-            && found.manufacturer == expected.manufacturer
-            && found.model == expected.model
-            && found.ip_addr == expected.ip_addr
-            && found.port == expected.port
-            && found.uuid == expected.uuid
-            && found.auth_token == expected.auth_token
+        self.name() == other.name()
+            && self.manufacturer() == other.manufacturer()
+            && self.model_name() == other.model_name()
+            && self.ip() == other.ip()
+            && self.port() == other.port()
+            && self.uuid() == other.uuid()
+            && *self.inner.auth_token.try_read().unwrap()
+                == *other.inner.auth_token.try_read().unwrap()
     }
 }

@@ -138,7 +138,7 @@ impl Command {
                 }
             };
             // Add auth token header
-            if let Some(token) = &device.auth_token() {
+            if let Some(token) = &device.auth_token().await {
                 req = req.header("Auth", token.to_string())
             }
             log::debug!("req: {:?}", req);
