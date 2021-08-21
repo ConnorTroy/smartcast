@@ -149,7 +149,7 @@ impl Device {
             Some(device) => Ok(device),
             None => {
                 log::error!("Device not found at '{}'", ip_addr);
-                Err(Error::Other("Device not found".into())) // Placeholder - TODO
+                Err(Error::device_not_found_ip(ip_addr))
             }
         }
     }
@@ -179,7 +179,7 @@ impl Device {
             Ok(device_vec.swap_remove(0))
         } else {
             log::error!("Device not found with UUID '{}'", uuid);
-            Err(Error::Other("Device not found".into())) // Placeholder - TODO
+            Err(Error::device_not_found_uuid(uuid))
         }
     }
 

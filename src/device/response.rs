@@ -1,4 +1,5 @@
-use super::{DeviceInfo, Error, Input, Result, SliderInfo, SubSetting};
+use super::{DeviceInfo, Input, SliderInfo, SubSetting};
+use crate::error::{ApiError, Result};
 
 use serde_json::Value;
 
@@ -65,7 +66,7 @@ impl Response {
 pub fn process(response: String) -> Result<Response> {
     let response: Value = match serde_json::from_str(&response) {
         Ok(res) => res,
-        Err(_) => return Err(Error::Other(response)),
+        Err(_) => return Err(ApiError::Unknown(response).into()),
     };
 
     let result: String = response["STATUS"]["RESULT"].to_string().to_lowercase();
@@ -74,41 +75,40 @@ pub fn process(response: String) -> Result<Response> {
     let result: &str = &result[1..result.len() - 1];
 
     // Error Handling
-    match result {
-        "success" => {}
-        "invalid_parameter" => return Err(Error::InvalidParameter),
-        "uri_not_found" => return Err(Error::UriNotFound),
-        "max_challenges_exceeded" => return Err(Error::MaxChallengesExceeded),
-        "pairing_denied" => return Err(Error::PairingDenied),
-        "value_out_of_range" => return Err(Error::ValueOutOfRange),
-        "challenge_incorrect" => return Err(Error::ChallengeIncorrect),
-        "blocked" => return Err(Error::Blocked),
-        "failure" => return Err(Error::Failure),
-        "aborted" => return Err(Error::Aborted),
-        "busy" => return Err(Error::Busy),
-        "requires_pairing" => return Err(Error::RequiresPairing),
-        "requires_system_pin" => return Err(Error::RequiresSystemPin),
-        "requires_new_system_pin" => return Err(Error::RequiresNewSystemPin),
-        "net_wifi_needs_valid_ssid" => return Err(Error::NetWifiNeedsValidSSID),
-        "net_wifi_already_connected" => return Err(Error::NetWifiAlreadyConnected),
-        "net_wifi_missing_password" => return Err(Error::NetWifiMissingPassword),
-        "net_wifi_not_existed" => return Err(Error::NetWifiNotExisted),
-        "net_wifi_auth_rejected" => return Err(Error::NetWifiAuthRejected),
-        "net_wifi_connect_timeout" => return Err(Error::NetWifiConnectTimeout),
-        "net_wifi_connect_aborted" => return Err(Error::NetWifiConnectAborted),
-        "net_wifi_connection_error" => return Err(Error::NetWifiConnection),
-        "net_ip_manual_config_error" => return Err(Error::NetIPManualConfig),
-        "net_ip_dhcp_failed" => return Err(Error::NetIPDHCPFailed),
-        "net_unknown_error" => return Err(Error::NetUnknown),
+    Err(match result {
+        "success" => return Ok(Response { value: response }),
+        "invalid_parameter" => ApiError::InvalidParameter,
+        "uri_not_found" => ApiError::UriNotFound,
+        "max_challenges_exceeded" => ApiError::MaxChallengesExceeded,
+        "pairing_denied" => ApiError::PairingDenied,
+        "value_out_of_range" => ApiError::ValueOutOfRange,
+        "challenge_incorrect" => ApiError::ChallengeIncorrect,
+        "blocked" => ApiError::Blocked,
+        "failure" => ApiError::Failure,
+        "aborted" => ApiError::Aborted,
+        "busy" => ApiError::Busy,
+        "requires_pairing" => ApiError::RequiresPairing,
+        "requires_system_pin" => ApiError::RequiresSystemPin,
+        "requires_new_system_pin" => ApiError::RequiresNewSystemPin,
+        "net_wifi_needs_valid_ssid" => ApiError::NetWifiNeedsValidSSID,
+        "net_wifi_already_connected" => ApiError::NetWifiAlreadyConnected,
+        "net_wifi_missing_password" => ApiError::NetWifiMissingPassword,
+        "net_wifi_not_existed" => ApiError::NetWifiNotExisted,
+        "net_wifi_auth_rejected" => ApiError::NetWifiAuthRejected,
+        "net_wifi_connect_timeout" => ApiError::NetWifiConnectTimeout,
+        "net_wifi_connect_aborted" => ApiError::NetWifiConnectAborted,
+        "net_wifi_connection_error" => ApiError::NetWifiConnection,
+        "net_ip_manual_config_error" => ApiError::NetIPManualConfig,
+        "net_ip_dhcp_failed" => ApiError::NetIPDHCPFailed,
+        "net_unknown_error" => ApiError::NetUnknown,
         _ => {
             return Err(format!(
-                "Uncaught failure, could be an api bug.\nStatus Result: {}\nDetail: {}\n",
+                "Status Result: {} Detail: {}",
                 response["STATUS"]["RESULT"].to_string(),
                 response["STATUS"]["DETAIL"].to_string()
             )
             .into());
         }
     }
-
-    Ok(Response { value: response })
+    .into())
 }
