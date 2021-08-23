@@ -181,9 +181,9 @@ impl SubSetting {
     /// # Example
     ///
     /// ```
-    /// # use smartcast::{Device, SubSetting};
-    /// #
     /// # async fn example() -> Result<(), smartcast::Error> {
+    /// use smartcast::{Device, SubSetting};
+    ///
     /// let mut dev = Device::from_ip("192.168.0.14").await?;
     /// dev.set_auth_token("Z2zscc1udl");
     /// let settings: Vec<SubSetting> = dev.settings().await?;
@@ -293,10 +293,11 @@ impl SubSetting {
     /// # Example
     ///
     /// ```
-    /// # use smartcast::{Device, SubSetting};
-    /// #
     /// # async fn example() -> Result<(), smartcast::Error> {
-    /// # let mut dev = Device::from_ip("192.168.0.14").await?;
+    /// use smartcast::{Device, SubSetting};
+    ///
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
+    ///
     /// let settings: Vec<SubSetting> = dev.settings().await?;
     /// let pic_settings: Vec<SubSetting> = settings[0].expand().await?;
     /// println!("{:#?}", pic_settings);
@@ -353,10 +354,11 @@ impl SubSetting {
     /// # Example
     ///
     /// ```
-    /// # use smartcast::{Device, SubSetting};
-    /// #
     /// # async fn example() -> Result<(), smartcast::Error> {
-    /// # let mut dev = Device::from_ip("192.168.0.14").await?;
+    /// use smartcast::{Device, SubSetting};
+    ///
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
+    ///
     /// let settings: Vec<SubSetting> = dev.settings().await?;
     /// let pic_settings: Vec<SubSetting> = settings[0].expand().await?;
     /// println!("{:#?}", pic_settings);
@@ -406,10 +408,12 @@ impl SubSetting {
     /// # Example
     ///
     /// ```
-    /// # use smartcast::{Device, SubSetting};
-    /// #
     /// # async fn example() -> Result<(), smartcast::Error> {
-    /// # let mut dev = Device::from_ip("192.168.0.14").await?;
+
+    /// use smartcast::{Device, SubSetting};
+    ///
+    /// let dev = Device::from_ip("192.168.0.14").await?;
+    ///
     /// let settings: Vec<SubSetting> = dev.settings().await?;
     /// let pic_settings: Vec<SubSetting> = settings[0].expand().await?;
     /// println!("{:#?}", pic_settings);
@@ -427,9 +431,7 @@ impl SubSetting {
     /// // > },
     /// // > ...
     /// // > ]
-    /// if let Some(elements) = pic_settings[0].elements().await? {
-    ///     println!("{:#?}", elements);
-    /// }
+    /// println!("{:#?}", pic_settings[0].elements().await?);
     /// // > [
     /// // >     "Vivid",
     /// // >     "Bright",
@@ -441,15 +443,15 @@ impl SubSetting {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn elements(&self) -> Result<Option<Vec<String>>> {
+    pub async fn elements(&self) -> Result<Vec<String>> {
         log::trace!("Get Elements");
         if self.object_type == SettingType::List || self.object_type == SettingType::XList {
             match self.dynamic_response().await?.elements() {
-                Ok(elements) => Ok(Some(elements)),
-                Err(_) => Ok(self.static_response().await?.elements().ok()),
+                Ok(elements) => Ok(elements),
+                Err(_) => Ok(self.static_response().await?.elements().unwrap_or_default()),
             }
         } else {
-            Ok(None)
+            Ok(Vec::new())
         }
     }
 

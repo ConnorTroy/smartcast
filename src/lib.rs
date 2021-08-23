@@ -13,14 +13,15 @@
 //! use smartcast::Device;
 //!
 //! async fn example_main() -> Result<(), smartcast::Error> {
-//!    let ssdp_devices = smartcast::discover_devices().await?;
 //!
+//!     let ssdp_devices = smartcast::discover_devices().await?;
 //!     let dev_by_ssdp = ssdp_devices[0].clone();
 //!     let dev_by_ip = Device::from_ip(dev_by_ssdp.ip()).await?;
 //!     let dev_by_uuid = Device::from_uuid(dev_by_ssdp.uuid()).await?;
 //!
 //!     assert_eq!(dev_by_ssdp.name(), dev_by_ip.name());
 //!     assert_eq!(dev_by_ssdp.name(), dev_by_uuid.name());
+//!
 //!     Ok(())
 //! }
 //! ```
@@ -38,10 +39,8 @@ mod device;
 mod discover;
 mod error;
 
-pub use device::{
-    Button, ButtonEvent, Device, DeviceInfo, Input, SettingType, SliderInfo, SubSetting,
-};
-pub use error::{Error, Result};
+pub use device::{Button, Device, DeviceInfo, Input, SettingType, SliderInfo, SubSetting};
+pub use error::{ApiError, ClientError, Error, Result};
 
 use std::future::Future;
 

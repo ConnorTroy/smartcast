@@ -12,6 +12,7 @@ You can use `discover_devices()` to find SmartCast devices on your local network
 use smartcast::Device;
 
 async fn example_main() -> Result<(), smartcast::Error> {
+    
     let ssdp_devices = smartcast::discover_devices().await?;
 
     let dev_by_ssdp = ssdp_devices[0].clone();
@@ -20,6 +21,7 @@ async fn example_main() -> Result<(), smartcast::Error> {
 
     asserteq!(dev_by_ssdp.name(), dev_by_ip.name());
     asserteq!(dev_by_ssdp.name(), dev_by_uuid.name());
+
     Ok(())
 }
 ```

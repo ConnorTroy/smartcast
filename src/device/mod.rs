@@ -19,6 +19,7 @@ use self::settings::EndpointBase;
 use reqwest::Client;
 use tokio::sync::RwLock;
 
+use std::fmt::Debug;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,7 +35,7 @@ pub const DEFAULT_TIMEOUT: u64 = 3;
 /// using [`Device::from_ip()`](Device::from_ip) or [`Device::from_uuid()`](Device::from_uuid).
 ///
 /// Note that cloning `Device` is zero-cost and thread safe.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Device {
     inner: Arc<DeviceRef>,
 }
@@ -131,14 +132,15 @@ impl Device {
     /// # Example
     ///
     /// ```
-    /// # use smartcast::Device;
-    /// #
-    /// # async fn connect_ip() -> Result<Device, smartcast::Error> {
+    /// # async fn example() -> Result<Device, smartcast::Error> {
+
+    /// use smartcast::Device;
+    ///
     /// let ip_addr = "192.168.0.14";
     /// let dev: Device = Device::from_ip(ip_addr).await?;
     /// println!("{}", dev.name());
     /// // > "Living Room TV"
-    /// #
+
     /// # Ok(dev)
     /// # }
     /// ```
@@ -160,14 +162,15 @@ impl Device {
     /// # Example
     ///
     /// ```
-    /// # use smartcast::Device;
-    /// #
-    /// # async fn connect_uuid() -> Result<Device, smartcast::Error> {
+    /// # async fn example() -> Result<Device, smartcast::Error> {
+
+    /// use smartcast::Device;
+    ///
     /// let uuid = "cb72c9c8-2d45-65b6-424a-13fa25a650db";
     /// let dev: Device = Device::from_uuid(uuid).await?;
     /// println!("{}", dev.name());
     /// // > "Living Room TV"
-    /// #
+
     /// # Ok(dev)
     /// # }
     /// ```
@@ -235,18 +238,16 @@ impl Device {
 
         // Send a command which requires pairing to test token
         match self.current_input().await {
-            Ok(_) => {}
+            Ok(_) => Ok(()),
             Err(e) => {
                 log::warn!("Auth token was rejected by the device, reverting");
                 {
                     let mut token = self.inner.auth_token.write().await;
                     *token = old_token;
                 }
-
-                return Err(e);
+                Err(e)
             }
         }
-        Ok(())
     }
 
     /// Get various information about the device in the form of [`DeviceInfo`]
@@ -296,10 +297,11 @@ impl Device {
     /// # Example
     ///
     /// ```
-    /// # use smartcast::Device;
-    /// # use std::io::stdin;
-    /// #
-    /// # async fn pair() -> Result<String, smartcast::Error> {
+    /// # async fn example() -> Result<String, smartcast::Error> {
+
+    /// use smartcast::Device;
+    /// use std::io::stdin;
+    ///
     /// let mut dev = Device::from_ip("192.168.0.14").await?;
     ///
     /// let client_name = "My App Name";
@@ -316,6 +318,7 @@ impl Device {
     /// let auth_token = dev.finish_pair(pairing_data, &pin).await?;
     /// println!("{}", auth_token);
     /// // > "Z2zscc1udl"
+
     /// # Ok(auth_token)
     /// # }
     /// ```
@@ -357,9 +360,10 @@ impl Device {
     /// # Example
     ///
     /// ```
-    /// # use smartcast::Device;
-    /// #
-    /// # async fn pair_cancel() -> Result<(), smartcast::Error> {
+    /// # async fn example() -> Result<(), smartcast::Error> {
+
+    /// use smartcast::Device;
+    ///
     /// let mut dev = Device::from_ip("192.168.0.14").await?;
     ///
     /// let client_name = "My App Name";
@@ -370,6 +374,7 @@ impl Device {
     ///
     /// // Cancel Pairing
     /// dev.cancel_pair(pairing_data).await?;
+
     /// # Ok(())
     /// # }
     /// ```
@@ -395,10 +400,30 @@ impl Device {
     }
 
     /// Check whether the device is powered on
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn example() -> Result<(), smartcast::Error> {
+
+    /// use smartcast::{Device, Button};
+    ///
+    /// let dev = Device::from_ip("192.168.0.14").await?;
+    /// dev.set_auth_token("Z2zscc1udl");
+    ///
+    /// // Power on device
+    /// if !dev.is_powered_on().await? {
+    ///     dev.key_press(Button::PowerOn).await?;
+    /// }
+
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn is_powered_on(&self) -> Result<bool> {
         log::trace!("Power status");
-        let res = self.send_command(CommandDetail::GetPowerState).await?;
-        res.power_state()
+        self.send_command(CommandDetail::GetPowerState)
+            .await?
+            .power_state()
     }
 
     /// Emulates a simple remote control button press
@@ -492,6 +517,23 @@ impl Device {
     }
 
     /// Get the current device input
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn example() -> Result<(), smartcast::Error> {
+
+    /// use smartcast::Device;
+    ///
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
+    /// dev.set_auth_token("Z2zscc1udl");
+    ///
+    /// println!("{}", dev.current_input().await?.friendly_name());
+    /// // > "Nintendo Switch"
+
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn current_input(&self) -> Result<Input> {
         log::trace!("Get Current Input");
         let res = self.send_command(CommandDetail::GetCurrentInput).await?;
@@ -499,6 +541,25 @@ impl Device {
     }
 
     /// Get list of available inputs
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn example() -> Result<(), smartcast::Error> {
+
+    /// use smartcast::{Device, Input};
+    ///
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
+    /// dev.set_auth_token("Z2zscc1udl");
+    ///
+    /// let inputs: Vec<Input> = dev.list_inputs().await?;
+    ///
+    /// println!("{}", inputs[0].friendly_name());
+    /// // > "Nintendo Switch"
+
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn list_inputs(&self) -> Result<Vec<Input>> {
         log::trace!("List Inputs");
         let res = self.send_command(CommandDetail::GetInputList).await?;
@@ -510,9 +571,10 @@ impl Device {
     /// # Example
     ///
     /// ```
-    /// # use smartcast::Device;
-    /// #
-    /// # async fn change_input() -> Result<(), smartcast::Error> {
+    /// # async fn example() -> Result<(), smartcast::Error> {
+
+    /// use smartcast::Device;
+    ///
     /// let mut dev = Device::from_ip("192.168.0.14").await?;
     /// dev.set_auth_token("Z2zscc1udl");
     ///
@@ -522,6 +584,7 @@ impl Device {
     /// dev.change_input("HDMI-2").await?;
     /// println!("{}", dev.current_input().await?.friendly_name());
     /// // > "Playstation 4"
+
     /// # Ok(())
     /// # }
     /// ```
@@ -530,7 +593,7 @@ impl Device {
     pub async fn change_input<S: Into<String>>(&self, name: S) -> Result<()> {
         let name: String = name.into();
         log::trace!("Change Input");
-        log::debug!("name: {}", name);
+        log::debug!("change_input name: {}", name);
 
         self.send_command(CommandDetail::ChangeInput {
             name,
@@ -592,6 +655,27 @@ impl Device {
     #[cfg(test)]
     pub fn manufacturer(&self) -> String {
         self.inner.manufacturer.clone()
+    }
+}
+
+impl Debug for Device {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("Device");
+        d.field("name", &self.name());
+        d.field("manufacturer", &self.inner.manufacturer.clone());
+        d.field("model", &self.model_name());
+        d.field("settings_root", &self.settings_root());
+        d.field("ip_addr", &self.ip());
+        d.field("port", &self.port());
+        d.field("uuid", &self.uuid());
+        d.field(
+            "auth_token",
+            &match self.inner.auth_token.try_read() {
+                Ok(token) => token.clone(),
+                Err(_) => Some("***Locked***".into()),
+            },
+        );
+        d.finish()
     }
 }
 
