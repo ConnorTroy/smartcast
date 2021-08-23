@@ -290,13 +290,13 @@ async fn virtual_remote_default() {
 
             for i in 0..3 {
                 for button in &buttons {
-                    let key_event = match i {
-                        0 => ButtonEvent::KeyDown(*button),
-                        1 => ButtonEvent::KeyUp(*button),
-                        2 => ButtonEvent::KeyPress(*button),
+                    let res = match i {
+                        0 => dev.key_down(*button, None).await,
+                        1 => dev.key_up(*button).await,
+                        2 => dev.key_press(*button).await,
                         _ => panic!(),
                     };
-                    assert!(dev.button_event(key_event).await.is_ok());
+                    assert!(res.is_ok());
                 }
             }
         },
@@ -315,14 +315,13 @@ async fn virtual_remote_secondary() {
 
             for i in 0..3 {
                 for button in &buttons {
-                    let key_event = match i {
-                        0 => ButtonEvent::KeyDown(*button),
-                        1 => ButtonEvent::KeyUp(*button),
-                        2 => ButtonEvent::KeyPress(*button),
+                    let res = match i {
+                        0 => dev.key_down(*button, None).await,
+                        1 => dev.key_up(*button).await,
+                        2 => dev.key_press(*button).await,
                         _ => panic!(),
                     };
-                    log::trace!(target: "test::virtual_remote_secondary", "{:?}", key_event);
-                    assert!(dev.button_event(key_event).await.is_ok());
+                    assert!(res.is_ok());
                 }
             }
         },

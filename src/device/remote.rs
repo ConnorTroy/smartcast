@@ -1,44 +1,46 @@
+use std::fmt::Debug;
+
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 
-/// Button interactions used in [`button_event()`](super::Device::button_event)
+/// Button interactions used in `key(up|down|press)()` in [super::Device]
 ///
 /// Must include a [`Button`] to specify what you want to interact with
-#[derive(Debug)]
-pub enum ButtonEvent {
+#[derive(Debug, Clone, Copy)]
+pub(super) enum KeyEvent {
     /// Hold the button down
-    KeyDown(Button),
+    Down(Button),
     /// Release the button after a hold
-    KeyUp(Button),
+    Up(Button),
     /// Click the button once
-    KeyPress(Button),
+    Press(Button),
 }
 
-impl ButtonEvent {
+impl KeyEvent {
     fn button(&self) -> Button {
         match self {
-            Self::KeyDown(button) | Self::KeyUp(button) | Self::KeyPress(button) => *button,
+            Self::Down(button) | Self::Up(button) | Self::Press(button) => *button,
         }
     }
 }
 
-impl ToString for ButtonEvent {
+impl ToString for KeyEvent {
     fn to_string(&self) -> String {
         match self {
-            Self::KeyDown(_) => "KEYDOWN",
-            Self::KeyUp(_) => "KEYUP",
-            Self::KeyPress(_) => "KEYPRESS",
+            Self::Down(_) => "KEYDOWN",
+            Self::Up(_) => "KEYUP",
+            Self::Press(_) => "KEYPRESS",
         }
         .to_string()
     }
 }
 
-impl From<ButtonEvent> for Vec<ButtonEvent> {
-    fn from(event: ButtonEvent) -> Vec<ButtonEvent> {
+impl From<KeyEvent> for Vec<KeyEvent> {
+    fn from(event: KeyEvent) -> Vec<KeyEvent> {
         vec![event]
     }
 }
 
-impl Serialize for ButtonEvent {
+impl Serialize for KeyEvent {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -52,7 +54,8 @@ impl Serialize for ButtonEvent {
     }
 }
 
-/// "Buttons" you can interact with using [`ButtonEvent`]
+/// Remote control "buttons" you can interact with using [`Device::key_press()`](super::Device::key_press),
+/// [`Device::key_down()`](super::Device::key_down), or [`Device::key_up()`](super::Device::key_up)
 #[allow(unused)]
 #[derive(Debug, Clone, Copy)]
 pub enum Button {

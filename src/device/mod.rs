@@ -8,10 +8,11 @@ mod response;
 mod settings;
 
 pub use self::info::{DeviceInfo, Input};
-pub use self::remote::{Button, ButtonEvent};
+pub use self::remote::Button;
 pub use self::settings::{SettingType, SliderInfo, SubSetting};
 
 use self::command::{Command, CommandDetail};
+use self::remote::KeyEvent;
 use self::response::Response;
 use self::settings::EndpointBase;
 
@@ -400,44 +401,94 @@ impl Device {
         res.power_state()
     }
 
-    /// Emulates a button press on a remote control
-    ///
-    /// Pass in a [`ButtonEvent`] or vector of [`ButtonEvent`]s to interact with the device.
-    /// In the latter case, commands will be processed in order.
+    /// Emulates a simple remote control button press
     ///
     /// # Example
     ///
     /// ```
-    /// use smartcast::{Device, ButtonEvent, Button};
+    /// # async fn example() -> Result<(), smartcast::Error> {
+
+    /// use smartcast::{Device, Button};
     ///
-    /// # async fn power_on_volume_up() -> Result<Device, smartcast::Error> {
     /// let mut dev = Device::from_ip("192.168.0.14").await?;
     /// dev.set_auth_token("Z2zscc1udl");
     ///
-    /// // Power on device
-    /// if !dev.is_powered_on().await? {
-    ///     dev.button_event(ButtonEvent::KeyPress(Button::PowerOn)).await?;
-    /// }
-    ///
     /// // Increase Volume
-    /// dev.button_event(ButtonEvent::KeyPress(Button::VolumeUp)).await?;
-    ///
-    /// // Increase Volume More
-    /// dev.button_event(vec![
-    ///     ButtonEvent::KeyPress(Button::VolumeUp),
-    ///     ButtonEvent::KeyPress(Button::VolumeUp),
-    /// ]).await?;
-    /// # Ok(dev)
+    /// dev.key_press(Button::VolumeUp).await?;
+
+    /// # Ok(())
     /// # }
     /// ```
-    pub async fn button_event<V: Into<Vec<ButtonEvent>>>(&self, buttons: V) -> Result<()> {
-        let button_vec: Vec<ButtonEvent> = buttons.into();
-        log::trace!("Button Event");
-        log::debug!("{:?}", button_vec);
+    pub async fn key_press(&self, button: Button) -> Result<()> {
+        log::trace!("Virtual Remote Key Press");
+        self.send_command(CommandDetail::RemoteButtonPress(KeyEvent::Press(button)))
+            .await
+            .map(|_| ())
+    }
 
-        self.send_command(CommandDetail::RemoteButtonPress(button_vec))
+    /// Emulates holding down a remote control button
+    ///
+    /// If a duration is specified, the remote button will be held down for the duration.
+    /// Otherwise it will be held down indefinitely and [`key_up()`](Self::key_up) must be called.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn example() -> Result<(), smartcast::Error> {
+
+    /// use smartcast::{Device, Button};
+    /// use std::time::Duration;
+    ///
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
+    /// dev.set_auth_token("Z2zscc1udl");
+    ///
+    /// // Increase Volume for 5 seconds
+    /// dev.key_down(Button::VolumeUp, Some(Duration::from_secs(5))).await?;
+
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn key_down(&self, button: Button, duration: Option<Duration>) -> Result<()> {
+        log::trace!("Virtual Remote Key Down");
+        log::debug!("key_down duration: {:?}", duration);
+
+        self.send_command(CommandDetail::RemoteButtonPress(KeyEvent::Down(button)))
             .await?;
+        if let Some(duration) = duration {
+            // Sleep for duration
+            tokio::time::sleep(duration).await;
+            self.key_up(button).await?;
+        }
         Ok(())
+    }
+
+    /// Emulates releasing a remote control button
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn example() -> Result<(), smartcast::Error> {
+
+    /// use smartcast::{Device, Button};
+    /// use tokio::time::sleep;
+    /// use std::time::Duration;
+    ///
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
+    /// dev.set_auth_token("Z2zscc1udl");
+    ///
+    /// // Increase Volume for 5 seconds
+    /// dev.key_down(Button::VolumeUp, None).await?;
+    /// sleep(Duration::from_secs(5)).await;
+    /// dev.key_up(Button::VolumeUp).await?;
+
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn key_up(&self, button: Button) -> Result<()> {
+        log::trace!("Virtual Remote Key Up");
+        self.send_command(CommandDetail::RemoteButtonPress(KeyEvent::Up(button)))
+            .await
+            .map(|_| ())
     }
 
     /// Get the current device input
