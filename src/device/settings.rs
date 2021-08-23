@@ -1,4 +1,5 @@
-use super::{CommandDetail, Device, Response, Result};
+use super::{CommandDetail, Device, Response};
+use crate::error::{ClientError, Error, Result};
 
 use serde::{de, Deserialize};
 use serde_json::Value;
@@ -56,14 +57,16 @@ impl<'de> Deserialize<'de> for SettingType {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 /// Information about a settings slider
 pub struct SliderInfo {
     #[serde(rename = "DECMARKER")]
+    #[serde(default)]
     /// Text at the low end of the slider
     pub dec_marker: String,
     #[serde(rename = "INCMARKER")]
+    #[serde(default)]
     /// Text at the high end of the slider
     pub inc_marker: String,
     /// Amount value can change at a time
@@ -75,7 +78,7 @@ pub struct SliderInfo {
     /// Slider min value
     pub min: i32,
     /// Value at center of the slider
-    pub center: i32,
+    pub center: Option<i32>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -230,13 +233,23 @@ impl SubSetting {
     /// ```
     pub async fn expand(&self) -> Result<Vec<SubSetting>> {
         log::trace!("SubSetting Expand");
-        // TODO: leaf uri block
-        let res = self.dynamic_response().await.unwrap();
-        let mut settings = res.settings()?;
+        if !matches!(self.object_type, SettingType::Menu) {
+            return Ok(vec![self.clone()]);
+        }
+
+        let mut settings: Vec<SubSetting> = self.dynamic_response().await?.settings()?;
 
         // Add device reference and update endpoint
         for s in settings.iter_mut() {
             s.add_parent_data(self);
+
+            // Some value types are actually sliders so try to update accordingly
+            if s.object_type == SettingType::Value {
+                s.object_type = SettingType::Slider;
+                if s.slider_info().await?.is_none() {
+                    s.object_type = SettingType::Value;
+                }
+            }
         }
         Ok(settings)
     }
@@ -322,7 +335,10 @@ impl SubSetting {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn value<T: for<'de> Deserialize<'de>>(&self) -> Option<T> {
+    pub fn value<T>(&self) -> Option<T>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
         if let Some(value) = self.value.clone() {
             serde_json::from_value(value).ok()
         } else {

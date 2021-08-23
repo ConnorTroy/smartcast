@@ -1,7 +1,7 @@
 mod support;
 use support::{helpers, CodeSet, DeviceType, PortOption, Test};
 
-use smartcast::{ButtonEvent, SettingType};
+use smartcast::SettingType;
 
 use rand::Rng;
 
@@ -120,16 +120,30 @@ async fn settings_read() {
             for s in settings {
                 match s.setting_type() {
                     SettingType::Slider => {
-                        assert_eq!(
-                            support::expected_slider_info(),
-                            s.slider_info().await.unwrap().unwrap()
-                        )
+                        let found_slider_info = s.slider_info().await;
+                        assert!(found_slider_info.is_ok());
+                        assert!(found_slider_info.unwrap().is_some());
+                        let slider_info = s.slider_info().await.unwrap().unwrap();
+                        let exp_slider = support::expected_slider_info();
+
+                        dbg!(&slider_info);
+                        if slider_info.dec_marker != ""
+                        || slider_info.inc_marker != ""
+                        || slider_info.center.is_some()
+                        {
+                            assert_eq!(exp_slider.dec_marker, slider_info.dec_marker);
+                            assert_eq!(exp_slider.inc_marker, slider_info.inc_marker);
+                            assert_eq!(exp_slider.center, slider_info.center);
+                        }
+                        assert_eq!(exp_slider.increment, slider_info.increment);
+                        assert_eq!(exp_slider.max, slider_info.max);
+                        assert_eq!(exp_slider.min, slider_info.min);
                     }
                     SettingType::Value => {
                         assert!(s.value::<serde_json::Value>().is_some())
                     }
                     SettingType::List | SettingType::XList => {
-                        let elements = s.elements().await.unwrap().unwrap();
+                        let elements = s.elements().await.unwrap();
                         assert!(elements.len() == support::LIST_LEN);
                     }
                     _ => {}

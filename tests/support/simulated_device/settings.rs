@@ -270,7 +270,7 @@ impl Setting {
                         "HASHVAL": {},
                         "ITEMS": [
                         {{
-                            "CENTER": 0,
+                            "CENTER": {},
                             "CNAME": "{}",
                             "DECMARKER": "{}",
                             "INCMARKER": "{}",
@@ -290,9 +290,43 @@ impl Setting {
                     }}
                     "#,
                     self.hashval,
+                    exp_slider.center.unwrap(),
                     self.cname,
                     exp_slider.dec_marker,
                     exp_slider.inc_marker,
+                    exp_slider.increment,
+                    exp_slider.max,
+                    exp_slider.min,
+                    self.name,
+                    status!(Result::Success),
+                )
+            }
+            SettingType::Value => {
+                let exp_slider = expected_slider_info();
+                format!(
+                    r#"
+                    {{
+                        "HASHVAL": {},
+                        "ITEMS": [
+                        {{
+                            "CNAME": "{}",
+                            "INCREMENT": {},
+                            "MAXIMUM": {},
+                            "MINIMUM": {},
+                            "NAME": "{}",
+                            "TYPE": "T_VALUE_ABS_V1"
+                        }}
+                        ],
+                        "PARAMETERS": {{
+                            "FLAT": "TRUE",
+                            "HASHONLY": "FALSE",
+                            "HELPTEXT": "FALSE"
+                        }},
+                        {}
+                    }}
+                    "#,
+                    self.hashval,
+                    self.cname,
                     exp_slider.increment,
                     exp_slider.max,
                     exp_slider.min,
@@ -370,7 +404,7 @@ pub fn expected_slider_info() -> SliderInfo {
         increment: 1,
         max: 100,
         min: -100,
-        center: 0,
+        center: Some(0),
     }
 }
 
