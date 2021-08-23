@@ -1,6 +1,7 @@
-use super::EndpointBase;
-
-use super::{response, ButtonEvent, Device, Response, Result};
+use super::{
+    response::{self, Response},
+    Device, EndpointBase, KeyEvent, Result,
+};
 
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 use serde_json::Value;
@@ -15,7 +16,7 @@ pub enum RequestType {
 
 #[allow(unused)] // Temp - TODO: remove
 #[derive(Debug)]
-pub enum CommandDetail {
+pub(super) enum CommandDetail {
     StartPairing {
         client_name: String,
         client_id: String,
@@ -33,7 +34,7 @@ pub enum CommandDetail {
     },
     GetPowerState,
     GetDeviceInfo,
-    RemoteButtonPress(Vec<ButtonEvent>),
+    RemoteButtonPress(KeyEvent),
     GetCurrentInput,
     GetInputList,
     ChangeInput {
@@ -97,7 +98,7 @@ impl CommandDetail {
     }
 }
 
-pub struct Command {
+pub(super) struct Command {
     detail: CommandDetail,
     endpoint: String,
     device: Device,
@@ -148,7 +149,7 @@ impl Command {
         // Request send
         .send()
         .await?
-        // Get response as text because some device errors do not follow the standard format
+        // Get response as text because some device errors do not follow json format
         .text()
         .await?;
 
@@ -196,8 +197,8 @@ impl Serialize for Command {
                 command.serialize_field("PAIRING_REQ_TOKEN", pairing_token)?;
                 command.end()
             }
-            CommandDetail::RemoteButtonPress(button_event_vec) => {
-                command.serialize_field("KEYLIST", button_event_vec)?;
+            CommandDetail::RemoteButtonPress(event) => {
+                command.serialize_field("KEYLIST", &(Vec::from(*event)))?;
                 command.end()
             }
             CommandDetail::ChangeInput { name, hashval } => {
