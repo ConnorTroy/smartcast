@@ -1,4 +1,7 @@
 # SmartCast Api
+[![crates.io](https://img.shields.io/crates/v/smartcast)](https://crates.io/crates/smartcast)
+[![Documentation](https://docs.rs/smartcast/badge.svg)](https://docs.rs/smartcast)
+[![Build](https://github.com/ConnorTroy/smartcast/actions/workflows/build.yml/badge.svg)](https://github.com/ConnorTroy/smartcast/actions/workflows/build.yml)
 
 This library provides an API for connecting to and controlling Vizio SmartCast TVs and Speakers. The struct `Device` provides a client for interfacing with the SmartCast device.
 

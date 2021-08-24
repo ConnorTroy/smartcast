@@ -2,7 +2,7 @@
 #![deny(missing_debug_implementations)]
 //! # SmartCast Api
 //!
-//! This library provides an API for connecting to and controlling Vizio SmartCast TVs and Speakers. The struct `Device` provides a client for interfacing with the SmartCast device.
+//! This library provides an API for connecting to and controlling Vizio SmartCast TVs and Speakers. The struct [`Device`] provides a client for interfacing with the SmartCast device.
 //!
 //! ## Get Started
 //!
