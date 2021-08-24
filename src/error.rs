@@ -6,14 +6,15 @@ use serde_json::Value;
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
+/// Errors for API calls from [`Device`](super::Device)
 pub enum Error {
     /// Errors from the SmartCast device
     Api(ApiError),
-    /// Errors from ['Device'](super::Device)
+    /// Errors from [`Device`](super::Device)
     Client(ClientError),
-    /// Error from http client
+    /// Error from http client [`Reqwest`](reqwest)
     Reqwest(reqwest::Error),
-    /// Error from std::io
+    /// Error from [`std::io`]
     IO(std::io::Error),
     /// Error processing json command
     Json(serde_json::Error),
@@ -22,40 +23,49 @@ pub enum Error {
 }
 
 impl Error {
+    /// Returns true if the error is from the SmartCast Device
     pub fn is_api(&self) -> bool {
         matches!(self, Error::Api(_))
     }
 
+    /// Returns true if the error is from [`Device`](super::Device)
     pub fn is_client(&self) -> bool {
         matches!(self, Error::Client(_))
     }
 
+    /// Returns true if the error is from [`reqwest`]
     pub fn is_reqwest(&self) -> bool {
         matches!(self, Error::Reqwest(_))
     }
 
+    /// Returns true if the error is from [`serde_json`]
     pub fn is_serde(&self) -> bool {
         matches!(self, Error::Json(_))
     }
 
+    /// Returns true if the error is from [`std::io`]
     pub fn is_io(&self) -> bool {
         matches!(self, Error::IO(_))
     }
 
-    pub fn device_not_found_ip(ip_addr: String) -> Error {
+    pub(super) fn device_not_found_ip(ip_addr: String) -> Error {
         ClientError::DeviceNotFoundIP(ip_addr).into()
     }
 
-    pub fn device_not_found_uuid(uuid: String) -> Error {
+    pub(super) fn device_not_found_uuid(uuid: String) -> Error {
         ClientError::DeviceNotFoundUUID(uuid).into()
     }
 
-    pub fn setting_type_bad_match(current_value: Value, new_value: Value) -> Error {
+    pub(super) fn setting_type_bad_match(current_value: Value, new_value: Value) -> Error {
         ClientError::WriteSettingsBadType(current_value, new_value).into()
     }
 
-    pub fn setting_outside_bounds(min: i32, max: i32, new_value: i32) -> Error {
+    pub(super) fn setting_outside_bounds(min: i32, max: i32, new_value: i32) -> Error {
         ClientError::WriteSettingsOutsideBounds(min, max, new_value).into()
+    }
+
+    pub(super) fn setting_non_element() -> Error {
+        ClientError::WriteSettingsNotAnElement.into()
     }
 }
 
@@ -202,6 +212,7 @@ impl From<String> for ApiError {
 }
 
 #[derive(Debug)]
+/// Errors for client issues in [`Device`](super::Device)
 pub enum ClientError {
     /// Could not find device by IP
     DeviceNotFoundIP(String),
@@ -213,8 +224,16 @@ pub enum ClientError {
     WriteSettingsOutsideBounds(i32, i32, i32),
     /// Attempted to write a read only setting
     WriteSettingsReadOnly,
+    /// Attempted to write a List or XList with a value not contained in the object's elements
+    WriteSettingsNotAnElement,
     #[doc(hidden)]
     Message(String),
+}
+
+impl<S: Into<String>> From<S> for ClientError {
+    fn from(msg: S) -> Self {
+        Self::Message(msg.into())
+    }
 }
 
 impl Display for ClientError {
@@ -244,6 +263,10 @@ impl Display for ClientError {
 
             Self::WriteSettingsReadOnly => {
                 write!(f, "Attempted to write a menu or read only setting")
+            }
+
+            Self::WriteSettingsNotAnElement => {
+                write!(f, "Attempted to write a List or XList with a value not contained in the object's elements")
             }
 
             Self::Message(msg) => write!(f, "{}", msg),

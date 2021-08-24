@@ -132,7 +132,7 @@ impl Device {
     /// # Example
     ///
     /// ```
-    /// # async fn example() -> Result<Device, smartcast::Error> {
+    /// # async fn example() -> Result<(), smartcast::Error> {
 
     /// use smartcast::Device;
     ///
@@ -141,7 +141,7 @@ impl Device {
     /// println!("{}", dev.name());
     /// // > "Living Room TV"
 
-    /// # Ok(dev)
+    /// # Ok(())
     /// # }
     /// ```
     pub async fn from_ip<S: Into<String>>(ip_addr: S) -> Result<Self> {
@@ -162,7 +162,7 @@ impl Device {
     /// # Example
     ///
     /// ```
-    /// # async fn example() -> Result<Device, smartcast::Error> {
+    /// # async fn example() -> Result<(), smartcast::Error> {
 
     /// use smartcast::Device;
     ///
@@ -171,7 +171,7 @@ impl Device {
     /// println!("{}", dev.name());
     /// // > "Living Room TV"
 
-    /// # Ok(dev)
+    /// # Ok(())
     /// # }
     /// ```
     pub async fn from_uuid<S: Into<String>>(uuid: S) -> Result<Self> {
@@ -251,11 +251,11 @@ impl Device {
     }
 
     /// Get various information about the device in the form of [`DeviceInfo`]
-    // TODO
     pub async fn device_info(&self) -> Result<DeviceInfo> {
         log::trace!("Get Device Info");
-        let res = self.send_command(CommandDetail::GetDeviceInfo).await?;
-        res.device_info()
+        self.send_command(CommandDetail::GetDeviceInfo)
+            .await?
+            .into()
     }
 
     /// Begin the pairing process
@@ -277,15 +277,13 @@ impl Device {
         log::trace!("Begin Pairing");
         log::debug!("client_name: {}, client_id: {}", client_name, client_id);
 
-        let res = self
-            .send_command(CommandDetail::StartPairing {
-                client_name,
-                client_id: client_id.clone(),
-            })
-            .await?;
-        let (token, challenge) = res.pairing()?;
-        log::info!("Pairing started");
-        Ok((token, challenge, client_id))
+        self.send_command(CommandDetail::StartPairing {
+            client_name,
+            client_id: client_id.clone(),
+        })
+        .await?
+        .pairing()
+        .map(|(token, challenge)| (token, challenge, client_id))
     }
 
     /// Finish the pairing process
@@ -339,16 +337,14 @@ impl Device {
             pin
         );
 
-        let res = self
-            .send_command(CommandDetail::FinishPairing {
-                client_id,
-                pairing_token,
-                challenge,
-                response_value: pin,
-            })
-            .await?;
-        log::info!("Pairing complete");
-        res.auth_token()
+        self.send_command(CommandDetail::FinishPairing {
+            client_id,
+            pairing_token,
+            challenge,
+            response_value: pin,
+        })
+        .await?
+        .auth_token()
     }
 
     /// Cancel the pairing process
@@ -393,10 +389,8 @@ impl Device {
             pairing_token,
             challenge,
         })
-        .await?;
-
-        log::info!("Pairing canceled");
-        Ok(())
+        .await
+        .map(|_| ())
     }
 
     /// Check whether the device is powered on
@@ -536,8 +530,9 @@ impl Device {
     /// ```
     pub async fn current_input(&self) -> Result<Input> {
         log::trace!("Get Current Input");
-        let res = self.send_command(CommandDetail::GetCurrentInput).await?;
-        res.current_input()
+        self.send_command(CommandDetail::GetCurrentInput)
+            .await
+            .map(|response| response.into())?
     }
 
     /// Get list of available inputs
@@ -562,8 +557,9 @@ impl Device {
     /// ```
     pub async fn list_inputs(&self) -> Result<Vec<Input>> {
         log::trace!("List Inputs");
-        let res = self.send_command(CommandDetail::GetInputList).await?;
-        res.input_list()
+        self.send_command(CommandDetail::GetInputList)
+            .await
+            .map(|response| response.into())?
     }
 
     /// Changes the input of the device
