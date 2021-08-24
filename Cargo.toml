@@ -2,6 +2,8 @@
 name = "smartcast"
 version = "0.1.0"
 description = "API to connect and control Vizio SmartCast devices"
+categories = ["api-bindings"]
+keywords = ["home-automation", "smart-home", "smart-tv", "soundbar"]
 repository = "https://github.com/ConnorTroy/smartcast"
 readme = "README.md"
 license = "MIT"
@@ -27,6 +29,3 @@ rand = "0.8.4"
 warp = { version = "0.3.1", features = ["tls"] }
 http = "0.2.4"
 rcgen = "0.8.11"
-
-[features]
-custom_commands = []

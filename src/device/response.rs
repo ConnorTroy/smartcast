@@ -71,11 +71,6 @@ impl Response {
         self.items()
     }
 
-    // TODO: Get Current App
-    // pub fn current_app(mut self) -> Result<App> {
-
-    // }
-
     pub fn settings(mut self) -> Result<Vec<SubSetting>> {
         self.items()
     }

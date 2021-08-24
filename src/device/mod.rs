@@ -596,29 +596,11 @@ impl Device {
         Ok(())
     }
 
-    // TODO
-    // pub async fn current_app(&self) -> Result<()> {
-    //     let res = self.send_command(CommandDetail::GetCurrentApp).await?;
-    //     println!("{:#?}", res);
-    //     Ok(())
-    // }
-
     /// Get the root of the device's [`Settings`](SubSetting).
     pub async fn settings(&self) -> Result<Vec<SubSetting>> {
         log::trace!("Settings Root");
         settings::root(self.clone()).await
     }
-
-    // pub async fn custom_command(
-    //     &self,
-    //     request_type: command::RequestType,
-    //     endpoint: String,
-    //     put_data: Option<serde_json::Value>,
-    // ) -> Result<serde_json::Value> {
-    //     self.send_command(CommandDetail::Custom(request_type, endpoint, put_data))
-    //         .await?
-    //         .value()
-    // }
 
     pub(super) fn settings_root(&self) -> String {
         if let Ok(settings_root) = self.inner.settings_root.try_read() {
