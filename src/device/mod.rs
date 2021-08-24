@@ -34,7 +34,7 @@ pub const DEFAULT_TIMEOUT: u64 = 3;
 /// local network using [`discover_devices()`](crate::discover_devices). You can also connect directly
 /// using [`Device::from_ip()`](Device::from_ip) or [`Device::from_uuid()`](Device::from_uuid).
 ///
-/// Note that cloning `Device` is zero-cost and thread safe.
+/// Note that `Device` is [Arc] wrapped for flexibility so cloning is thread safe.
 #[derive(Clone)]
 pub struct Device {
     inner: Arc<DeviceRef>,
@@ -266,6 +266,7 @@ impl Device {
     /// This method returns `pairing data` consisting of a `Pairing Token`, a `Challenge Type`, and the `Client ID` which
     /// will need to be passed into [`finish_pair()`](Self::finish_pair)
     /// or [`cancel_pair()`](Self::cancel_pair).
+    ///
     /// Note: It may not be necessary to pair your device if it is a soundbar.
     pub async fn begin_pair<S: Into<String>>(
         &self,
@@ -390,7 +391,7 @@ impl Device {
             challenge,
         })
         .await
-        .map(|_| ())
+        .map(drop)
     }
 
     /// Check whether the device is powered on
@@ -440,9 +441,7 @@ impl Device {
     /// ```
     pub async fn key_press(&self, button: Button) -> Result<()> {
         log::trace!("Virtual Remote Key Press");
-        self.virtual_remote(KeyEvent::Press, button)
-            .await
-            .map(|_| ())
+        self.virtual_remote(KeyEvent::Press, button).await.map(drop)
     }
 
     /// Emulates holding down a remote control button
@@ -504,7 +503,7 @@ impl Device {
     /// ```
     pub async fn key_up(&self, button: Button) -> Result<()> {
         log::trace!("Virtual Remote Key Up");
-        self.virtual_remote(KeyEvent::Up, button).await.map(|_| ())
+        self.virtual_remote(KeyEvent::Up, button).await.map(drop)
     }
 
     /// Get the current device input
@@ -625,7 +624,7 @@ impl Device {
             (Err(e), Some(button_alt)) if e.is_api() => self
                 .send_command(CommandDetail::RemoteButtonPress(event, button_alt))
                 .await
-                .map(|_| ()),
+                .map(drop),
             (Err(other), _) => Err(other),
         }
     }

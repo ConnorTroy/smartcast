@@ -602,7 +602,7 @@ impl Write<String> for SubSetting {
                 serde_json::json!(new_value),
             ))
             .await
-            .map(|_| ())
+            .map(drop)
     }
 }
 
@@ -635,7 +635,7 @@ impl Write<i32> for SubSetting {
                 serde_json::json!(new_value),
             ))
             .await
-            .map(|_| ())
+            .map(drop)
     }
 }
 
@@ -651,7 +651,7 @@ impl Write<bool> for SubSetting {
                     serde_json::json!(new_value),
                 ))
                 .await
-                .map(|_| ())
+                .map(drop)
         } else {
             // Should have already been caught
             panic!("Bad Type")
