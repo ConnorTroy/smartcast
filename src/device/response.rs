@@ -1,114 +1,172 @@
-use super::{DeviceInfo, Error, Input, Result, SliderInfo, SubSetting};
+use super::{DeviceInfo, Input, SliderInfo, SubSetting};
+use crate::error::{ApiError, Error, Result};
 
+use serde::Deserialize;
 use serde_json::Value;
 
 #[derive(Debug)]
-pub struct Response {
+pub(super) struct Response {
     pub value: Value,
 }
 
 impl Response {
+    pub fn items<T>(&mut self) -> Result<T>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        serde_json::from_value(
+            self.value
+                .get("ITEMS")
+                .unwrap_or_else(|| panic!("'ITEMS' not found in response"))
+                .clone(),
+        )
+        .map_err(|e| e.into())
+    }
+
+    pub fn first_item<T>(&mut self, key: Option<&str>) -> Result<T>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        serde_json::from_value({
+            let item = match self.value.get("ITEM") {
+                Some(item) => item.clone(),
+                None => self.items::<Value>()?[0].take(),
+            };
+
+            if let Some(key) = key {
+                item.get(key)
+                    .ok_or_else(|| Error::Client("Key Not Found".into()))?
+                    .clone()
+            } else {
+                item
+            }
+        })
+        .map_err(|e| e.into())
+    }
+
     pub fn pairing(mut self) -> Result<(u32, u32)> {
         Ok((
-            serde_json::from_value(self.value["ITEM"]["PAIRING_REQ_TOKEN"].take())?,
-            serde_json::from_value(self.value["ITEM"]["CHALLENGE_TYPE"].take())?,
+            self.first_item(Some("PAIRING_REQ_TOKEN"))?,
+            self.first_item(Some("CHALLENGE_TYPE"))?,
         ))
     }
 
     pub fn auth_token(mut self) -> Result<String> {
-        Ok(serde_json::from_value(
-            self.value["ITEM"]["AUTH_TOKEN"].take(),
-        )?)
+        self.first_item(Some("AUTH_TOKEN"))
     }
 
     pub fn power_state(mut self) -> Result<bool> {
-        Ok(serde_json::from_value::<u32>(self.value["ITEMS"][0]["VALUE"].take())? == 1)
+        Ok(self.first_item::<i32>(Some("VALUE"))? == 1)
     }
 
     pub fn device_info(mut self) -> Result<DeviceInfo> {
-        Ok(serde_json::from_value::<DeviceInfo>(self.value["ITEMS"][0]["VALUE"].take()).unwrap())
+        self.first_item(Some("VALUE"))
     }
 
     pub fn current_input(mut self) -> Result<Input> {
-        Ok(serde_json::from_value(self.value["ITEMS"][0].take())?)
+        self.first_item(None)
     }
 
     pub fn input_list(mut self) -> Result<Vec<Input>> {
-        Ok(serde_json::from_value(self.value["ITEMS"].take())?)
+        self.items()
     }
-
-    // TODO: Get Current App
-    // pub fn current_app(mut self) -> Result<App> {
-
-    // }
 
     pub fn settings(mut self) -> Result<Vec<SubSetting>> {
-        Ok(serde_json::from_value(self.value["ITEMS"].take())?)
+        self.items()
     }
 
-    pub fn slider_info(mut self) -> Result<SliderInfo> {
-        Ok(serde_json::from_value(self.value["ITEMS"][0].take())?)
+    pub fn slider_info(mut self) -> Option<SliderInfo> {
+        self.first_item(None).ok()
     }
 
     pub fn elements(mut self) -> Result<Vec<String>> {
-        Ok(serde_json::from_value(
-            self.value["ITEMS"][0]["ELEMENTS"].take(),
-        )?)
+        self.first_item(Some("ELEMENTS"))
     }
-
-    // pub fn value(self) -> Result<Value> {
-    //     Ok(self.value)
-    // }
-    // Write Settings
 }
 
-pub fn process(response: String) -> Result<Response> {
+impl From<Response> for Value {
+    fn from(response: Response) -> Self {
+        response.value
+    }
+}
+
+impl From<Response> for Result<DeviceInfo> {
+    fn from(response: Response) -> Self {
+        response.device_info()
+    }
+}
+
+impl From<Response> for Result<Input> {
+    fn from(response: Response) -> Self {
+        response.current_input()
+    }
+}
+
+impl From<Response> for Result<Vec<Input>> {
+    fn from(response: Response) -> Self {
+        response.input_list()
+    }
+}
+
+impl From<Response> for Result<Vec<SubSetting>> {
+    fn from(response: Response) -> Self {
+        response.settings()
+    }
+}
+
+impl From<Response> for Option<SliderInfo> {
+    fn from(response: Response) -> Self {
+        response.slider_info()
+    }
+}
+
+pub(super) fn process(response: String) -> Result<Response> {
     let response: Value = match serde_json::from_str(&response) {
         Ok(res) => res,
-        Err(_) => return Err(Error::Other(response)),
+        Err(_) => return Err(ApiError::from(response).into()),
     };
 
-    let result: String = response["STATUS"]["RESULT"].to_string().to_lowercase();
-
-    // Remove quotes
-    let result: &str = &result[1..result.len() - 1];
-
     // Error Handling
-    match result {
-        "success" => {}
-        "invalid_parameter" => return Err(Error::InvalidParameter),
-        "uri_not_found" => return Err(Error::UriNotFound),
-        "max_challenges_exceeded" => return Err(Error::MaxChallengesExceeded),
-        "pairing_denied" => return Err(Error::PairingDenied),
-        "value_out_of_range" => return Err(Error::ValueOutOfRange),
-        "challenge_incorrect" => return Err(Error::ChallengeIncorrect),
-        "blocked" => return Err(Error::Blocked),
-        "failure" => return Err(Error::Failure),
-        "aborted" => return Err(Error::Aborted),
-        "busy" => return Err(Error::Busy),
-        "requires_pairing" => return Err(Error::RequiresPairing),
-        "requires_system_pin" => return Err(Error::RequiresSystemPin),
-        "requires_new_system_pin" => return Err(Error::RequiresNewSystemPin),
-        "net_wifi_needs_valid_ssid" => return Err(Error::NetWifiNeedsValidSSID),
-        "net_wifi_already_connected" => return Err(Error::NetWifiAlreadyConnected),
-        "net_wifi_missing_password" => return Err(Error::NetWifiMissingPassword),
-        "net_wifi_not_existed" => return Err(Error::NetWifiNotExisted),
-        "net_wifi_auth_rejected" => return Err(Error::NetWifiAuthRejected),
-        "net_wifi_connect_timeout" => return Err(Error::NetWifiConnectTimeout),
-        "net_wifi_connect_aborted" => return Err(Error::NetWifiConnectAborted),
-        "net_wifi_connection_error" => return Err(Error::NetWifiConnection),
-        "net_ip_manual_config_error" => return Err(Error::NetIPManualConfig),
-        "net_ip_dhcp_failed" => return Err(Error::NetIPDHCPFailed),
-        "net_unknown_error" => return Err(Error::NetUnknown),
-        _ => {
-            return Err(format!(
-                "Uncaught failure, could be an api bug.\nStatus Result: {}\nDetail: {}\n",
-                response["STATUS"]["RESULT"].to_string(),
-                response["STATUS"]["DETAIL"].to_string()
-            )
-            .into());
-        }
-    }
+    let result: String = response["STATUS"]["RESULT"]
+        .to_string()
+        .to_lowercase()
+        .replace("\"", "");
 
-    Ok(Response { value: response })
+    Err(match result.as_str() {
+        // Command was successful so return the response
+        "success" => return Ok(Response { value: response }),
+
+        // Anything else is an error
+        "invalid_parameter" => ApiError::InvalidParameter,
+        "uri_not_found" => ApiError::UriNotFound,
+        "max_challenges_exceeded" => ApiError::MaxChallengesExceeded,
+        "pairing_denied" => ApiError::PairingDenied,
+        "value_out_of_range" => ApiError::ValueOutOfRange,
+        "challenge_incorrect" => ApiError::ChallengeIncorrect,
+        "blocked" => ApiError::Blocked,
+        "failure" => ApiError::Failure,
+        "aborted" => ApiError::Aborted,
+        "busy" => ApiError::Busy,
+        "requires_pairing" => ApiError::RequiresPairing,
+        "requires_system_pin" => ApiError::RequiresSystemPin,
+        "requires_new_system_pin" => ApiError::RequiresNewSystemPin,
+        "net_wifi_needs_valid_ssid" => ApiError::NetWifiNeedsValidSSID,
+        "net_wifi_already_connected" => ApiError::NetWifiAlreadyConnected,
+        "net_wifi_missing_password" => ApiError::NetWifiMissingPassword,
+        "net_wifi_not_existed" => ApiError::NetWifiNotExisted,
+        "net_wifi_auth_rejected" => ApiError::NetWifiAuthRejected,
+        "net_wifi_connect_timeout" => ApiError::NetWifiConnectTimeout,
+        "net_wifi_connect_aborted" => ApiError::NetWifiConnectAborted,
+        "net_wifi_connection_error" => ApiError::NetWifiConnection,
+        "net_ip_manual_config_error" => ApiError::NetIPManualConfig,
+        "net_ip_dhcp_failed" => ApiError::NetIPDHCPFailed,
+        "net_unknown_error" => ApiError::NetUnknown,
+        _ => format!(
+            "Status Result: {} Detail: {}",
+            response["STATUS"]["RESULT"].to_string(),
+            response["STATUS"]["DETAIL"].to_string()
+        )
+        .into(),
+    }
+    .into())
 }

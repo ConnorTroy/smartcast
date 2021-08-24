@@ -1,7 +1,7 @@
 mod support;
 use support::{helpers, CodeSet, DeviceType, PortOption, Test};
 
-use smartcast::{ButtonEvent, SettingType};
+use smartcast::SettingType;
 
 use rand::Rng;
 
@@ -102,7 +102,7 @@ async fn change_input() {
             for input in inputs {
                 dev.change_input(input.name()).await.unwrap();
             }
-            // TODO: Bad input
+            assert!(dev.change_input("not_an_input").await.is_err())
         },
     )
     .await;
@@ -120,16 +120,30 @@ async fn settings_read() {
             for s in settings {
                 match s.setting_type() {
                     SettingType::Slider => {
-                        assert_eq!(
-                            support::expected_slider_info(),
-                            s.slider_info().await.unwrap().unwrap()
-                        )
+                        let found_slider_info = s.slider_info().await;
+                        assert!(found_slider_info.is_ok());
+                        assert!(&found_slider_info.unwrap().is_some());
+
+                        let found_slider_info = s.slider_info().await.unwrap().unwrap();
+                        let exp_slider = support::expected_slider_info();
+
+                        if !found_slider_info.dec_marker.is_empty()
+                            || !found_slider_info.inc_marker.is_empty()
+                            || found_slider_info.center.is_some()
+                        {
+                            assert_eq!(exp_slider.dec_marker, found_slider_info.dec_marker);
+                            assert_eq!(exp_slider.inc_marker, found_slider_info.inc_marker);
+                            assert_eq!(exp_slider.center, found_slider_info.center);
+                        }
+                        assert_eq!(exp_slider.increment, found_slider_info.increment);
+                        assert_eq!(exp_slider.max, found_slider_info.max);
+                        assert_eq!(exp_slider.min, found_slider_info.min);
                     }
                     SettingType::Value => {
                         assert!(s.value::<serde_json::Value>().is_some())
                     }
                     SettingType::List | SettingType::XList => {
-                        let elements = s.elements().await.unwrap().unwrap();
+                        let elements = s.elements().await.unwrap();
                         assert!(elements.len() == support::LIST_LEN);
                     }
                     _ => {}
@@ -161,39 +175,39 @@ async fn settings_write() {
                         // Good Values
                         for _ in 0..50 {
                             assert!(s
-                                .write(rng.gen_range(slider_info.min..=slider_info.max))
+                                .update(rng.gen_range(slider_info.min..=slider_info.max))
                                 .await
                                 .is_ok());
                         }
-                        assert!(s.write(slider_info.min).await.is_ok());
-                        assert!(s.write(slider_info.max).await.is_ok());
+                        assert!(s.update(slider_info.min).await.is_ok());
+                        assert!(s.update(slider_info.max).await.is_ok());
 
                         // Bad values - these should be handled by the library
-                        assert!(s.write(slider_info.max + 1).await.is_err());
-                        assert!(s.write(slider_info.max + 100).await.is_err());
-                        assert!(s.write(slider_info.min - 1).await.is_err());
-                        assert!(s.write(slider_info.min - 100).await.is_err());
-                        assert!(s.write("bad value").await.is_err());
-                        assert!(s.write(true).await.is_err());
+                        assert!(s.update(slider_info.max + 1).await.is_err());
+                        assert!(s.update(slider_info.max + 100).await.is_err());
+                        assert!(s.update(slider_info.min - 1).await.is_err());
+                        assert!(s.update(slider_info.min - 100).await.is_err());
+                        assert!(s.update("bad value".to_string()).await.is_err());
+                        assert!(s.update(true).await.is_err());
                     }
                     SettingType::Value => {
                         log::debug!(target: "test::simulated", "Type Value");
                         // Good Values
                         if s.is_boolean() {
                             log::debug!("Type Value - Boolean");
-                            assert!(s.write(true).await.is_ok());
-                            assert!(s.write(false).await.is_ok());
+                            assert!(s.update(true).await.is_ok());
+                            assert!(s.update(false).await.is_ok());
                         } else if s.is_number() {
                             log::debug!(target: "test::simulated", "Type Value - Number");
                             for _ in 0..50 {
-                                assert!(s.write(rng.gen::<i32>()).await.is_ok())
+                                assert!(s.update(rng.gen::<i32>()).await.is_ok())
                             }
                         }
                         if s.is_string() {
                             log::debug!(target: "test::simulated", "Type Value - String");
                             for _ in 0..50 {
                                 assert!(s
-                                    .write(support::rand_data::string(rng.gen_range(5..25)))
+                                    .update(support::rand_data::string(rng.gen_range(5..25)))
                                     .await
                                     .is_ok())
                             }
@@ -201,40 +215,43 @@ async fn settings_write() {
 
                         // Bad values - these should be handled by the library
                         if s.is_boolean() {
-                            assert!(s.write(rng.gen::<f32>()).await.is_err());
-                            assert!(s.write(rng.gen::<u32>()).await.is_err());
-                            assert!(s.write(rng.gen::<i32>()).await.is_err());
+                            assert!(s.update(rng.gen::<f32>()).await.is_err());
+                            assert!(s.update(rng.gen::<u32>()).await.is_err());
+                            assert!(s.update(rng.gen::<i32>()).await.is_err());
                             assert!(s
-                                .write(support::rand_data::string(rng.gen_range(5..25)))
+                                .update(support::rand_data::string(rng.gen_range(5..25)))
                                 .await
                                 .is_err());
                         } else if s.is_number() {
                             for _ in 0..50 {
-                                assert!(s.write(rng.gen::<f64>()).await.is_err());
                                 assert!(s
-                                    .write(rng.gen_range(i32::MAX as u64..u64::MAX))
+                                    .update(rng.gen_range(i32::MAX as f64..f64::MAX))
                                     .await
                                     .is_err());
                                 assert!(s
-                                    .write(rng.gen_range(i32::MIN as i64..i64::MIN))
+                                    .update(rng.gen_range(i32::MAX as u64..u64::MAX))
                                     .await
                                     .is_err());
-                                assert!(s.write(true).await.is_err());
-                                assert!(s.write(false).await.is_err());
                                 assert!(s
-                                    .write(support::rand_data::string(rng.gen_range(5..25)))
+                                    .update(rng.gen_range(i32::MIN as i64..i64::MIN))
+                                    .await
+                                    .is_err());
+                                assert!(s.update(true).await.is_err());
+                                assert!(s.update(false).await.is_err());
+                                assert!(s
+                                    .update(support::rand_data::string(rng.gen_range(5..25)))
                                     .await
                                     .is_err());
                             }
                         } else if s.is_string() {
                             for _ in 0..50 {
-                                assert!(s.write(rng.gen::<f32>()).await.is_err());
-                                assert!(s.write(rng.gen::<u32>()).await.is_err());
-                                assert!(s.write(rng.gen::<i32>()).await.is_err());
-                                assert!(s.write(true).await.is_err());
-                                assert!(s.write(false).await.is_err());
+                                assert!(s.update(rng.gen::<f32>()).await.is_err());
+                                assert!(s.update(rng.gen::<u32>()).await.is_err());
+                                assert!(s.update(rng.gen::<i32>()).await.is_err());
+                                assert!(s.update(true).await.is_err());
+                                assert!(s.update(false).await.is_err());
                                 assert!(s
-                                    .write(support::rand_data::string(rng.gen_range(100..250)))
+                                    .update(support::rand_data::string(rng.gen_range(100..250)))
                                     .await
                                     .is_err());
                             }
@@ -242,18 +259,18 @@ async fn settings_write() {
                     }
                     SettingType::List | SettingType::XList => {
                         log::debug!(target: "test::simulated", "Type List");
-                        let elements = s.elements().await.unwrap().unwrap();
+                        let elements = s.elements().await.unwrap();
                         assert!(elements.len() == support::LIST_LEN);
 
                         // Good Values
                         for element in elements {
-                            assert!(s.write(element).await.is_ok());
+                            assert!(s.update(element).await.is_ok());
                         }
 
                         // Bad values - these should be handled by the library
                         for _ in 0..50 {
                             assert!(s
-                                .write(support::rand_data::string(rng.gen_range(10..25)))
+                                .update(support::rand_data::string(rng.gen_range(10..25)))
                                 .await
                                 .is_err());
                         }
@@ -261,13 +278,13 @@ async fn settings_write() {
                     _ => {
                         // Bad values - these should be handled by the library
                         for _ in 0..50 {
-                            assert!(s.write(rng.gen::<f32>()).await.is_err());
-                            assert!(s.write(rng.gen::<u32>()).await.is_err());
-                            assert!(s.write(rng.gen::<i32>()).await.is_err());
-                            assert!(s.write(true).await.is_err());
-                            assert!(s.write(false).await.is_err());
+                            assert!(s.update(rng.gen::<f32>()).await.is_err());
+                            assert!(s.update(rng.gen::<u32>()).await.is_err());
+                            assert!(s.update(rng.gen::<i32>()).await.is_err());
+                            assert!(s.update(true).await.is_err());
+                            assert!(s.update(false).await.is_err());
                             assert!(s
-                                .write(support::rand_data::string(rng.gen_range(100..250)))
+                                .update(support::rand_data::string(rng.gen_range(100..250)))
                                 .await
                                 .is_err());
                         }
@@ -290,13 +307,13 @@ async fn virtual_remote_default() {
 
             for i in 0..3 {
                 for button in &buttons {
-                    let key_event = match i {
-                        0 => ButtonEvent::KeyDown(*button),
-                        1 => ButtonEvent::KeyUp(*button),
-                        2 => ButtonEvent::KeyPress(*button),
+                    let res = match i {
+                        0 => dev.key_down(*button, None).await,
+                        1 => dev.key_up(*button).await,
+                        2 => dev.key_press(*button).await,
                         _ => panic!(),
                     };
-                    assert!(dev.button_event(key_event).await.is_ok());
+                    assert!(res.is_ok());
                 }
             }
         },
@@ -315,14 +332,13 @@ async fn virtual_remote_secondary() {
 
             for i in 0..3 {
                 for button in &buttons {
-                    let key_event = match i {
-                        0 => ButtonEvent::KeyDown(*button),
-                        1 => ButtonEvent::KeyUp(*button),
-                        2 => ButtonEvent::KeyPress(*button),
+                    let res = match i {
+                        0 => dev.key_down(*button, None).await,
+                        1 => dev.key_up(*button).await,
+                        2 => dev.key_press(*button).await,
                         _ => panic!(),
                     };
-                    log::trace!(target: "test::virtual_remote_secondary", "{:?}", key_event);
-                    assert!(dev.button_event(key_event).await.is_ok());
+                    assert!(res.is_ok());
                 }
             }
         },

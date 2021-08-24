@@ -1,6 +1,7 @@
-use super::EndpointBase;
-
-use super::{response, ButtonEvent, Device, Response, Result};
+use super::{
+    response::{self, Response},
+    Button, Device, EndpointBase, KeyEvent, Result,
+};
 
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 use serde_json::Value;
@@ -15,7 +16,7 @@ pub enum RequestType {
 
 #[allow(unused)] // Temp - TODO: remove
 #[derive(Debug)]
-pub enum CommandDetail {
+pub(super) enum CommandDetail {
     StartPairing {
         client_name: String,
         client_id: String,
@@ -33,7 +34,7 @@ pub enum CommandDetail {
     },
     GetPowerState,
     GetDeviceInfo,
-    RemoteButtonPress(Vec<ButtonEvent>),
+    RemoteButtonPress(KeyEvent, Button),
     GetCurrentInput,
     GetInputList,
     ChangeInput {
@@ -43,7 +44,7 @@ pub enum CommandDetail {
     GetCurrentApp,
     LaunchApp(Value),
     ReadSettings(EndpointBase, String),
-    // WriteSettings, // TODO (Brick warning)
+    WriteSettings(String, u32, Value),
     Custom(RequestType, String, Option<Value>),
 }
 
@@ -71,7 +72,7 @@ impl CommandDetail {
             Self::GetCurrentApp => "/app/current".into(),
             Self::LaunchApp(_) => "/app/launch".into(),
             Self::ReadSettings(base, endpoint) => base.as_str() + endpoint,
-            // Self::WriteSettings                 => "/menu_native/dynamic/tv_settings/SETTINGS_CNAME/ITEMS_CNAME",
+            Self::WriteSettings(endpoint, _, _) => format!("/menu_native/dynamic{}", endpoint),
             Self::Custom(_, endpoint, _) => endpoint.into(),
         }
     }
@@ -84,8 +85,8 @@ impl CommandDetail {
             | Self::CancelPairing { .. }
             | Self::RemoteButtonPress { .. }
             | Self::ChangeInput { .. }
-            | Self::LaunchApp(_) => RequestType::Put,
-            // Self::WriteSettings     => RequestType::Put,
+            | Self::LaunchApp(_)
+            | Self::WriteSettings(_, _, _) => RequestType::Put,
             Self::GetPowerState
             | Self::GetDeviceInfo
             | Self::GetCurrentInput
@@ -97,7 +98,7 @@ impl CommandDetail {
     }
 }
 
-pub struct Command {
+pub(super) struct Command {
     detail: CommandDetail,
     endpoint: String,
     device: Device,
@@ -138,7 +139,7 @@ impl Command {
                 }
             };
             // Add auth token header
-            if let Some(token) = &device.auth_token() {
+            if let Some(token) = &device.auth_token().await {
                 req = req.header("Auth", token.to_string())
             }
             log::debug!("req: {:?}", req);
@@ -148,7 +149,7 @@ impl Command {
         // Request send
         .send()
         .await?
-        // Get response as text because some device errors do not follow the standard format
+        // Get response as text because some device errors do not follow json format
         .text()
         .await?;
 
@@ -196,8 +197,20 @@ impl Serialize for Command {
                 command.serialize_field("PAIRING_REQ_TOKEN", pairing_token)?;
                 command.end()
             }
-            CommandDetail::RemoteButtonPress(button_event_vec) => {
-                command.serialize_field("KEYLIST", button_event_vec)?;
+            CommandDetail::RemoteButtonPress(event, button) => {
+                #[derive(serde::Serialize)]
+                #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+                struct Helper {
+                    codeset: u8,
+                    code: u8,
+                    action: String,
+                }
+                let helper = Helper {
+                    codeset: button.codeset(),
+                    code: button.code(),
+                    action: event.to_string(),
+                };
+                command.serialize_field("KEYLIST", &(vec![helper]))?;
                 command.end()
             }
             CommandDetail::ChangeInput { name, hashval } => {
@@ -210,13 +223,12 @@ impl Serialize for Command {
                 command.serialize_field("VALUE", payload)?;
                 command.end()
             }
-            // TODO:
-            // CommandDetail::WriteSettings => {
-            //     let mut command = serializer.serialize_struct("", )?;
-            //     command.serialize_field("", )?;
-            //     command.serialize_field("", )?;
-            //     command.end()
-            // },
+            CommandDetail::WriteSettings(_, hashval, value) => {
+                command.serialize_field("REQUEST", "MODIFY")?;
+                command.serialize_field("HASHVAL", hashval)?;
+                command.serialize_field("VALUE", value)?;
+                command.end()
+            }
             _ => command.end(),
         }
     }

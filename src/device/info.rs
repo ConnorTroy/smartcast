@@ -2,7 +2,6 @@ use serde::{de, Deserialize, Deserializer};
 
 #[derive(Debug)]
 /// Various infomation about the device returned by [`device_info()`](super::Device::device_info)
-// TODO:
 pub struct DeviceInfo {
     /// Device name as known by Google Cast
     pub cast_name: String,
@@ -60,7 +59,6 @@ impl<'de> Deserialize<'de> for DeviceInfo {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 /// Input on the device
-// TODO:
 pub struct Input {
     name: String,
     #[serde(rename(deserialize = "VALUE"))]

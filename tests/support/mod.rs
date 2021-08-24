@@ -57,7 +57,7 @@ impl Future for Test {
     }
 }
 
-/// Future starts up a [`SimulatedDevice`] and provides a [`Device`] client. Panics after duration passed in.
+/// Future starts up a [`SimulatedDevice`] and provides a [`Device`] client. Panics after specified duration.
 struct Simulate {
     startup: Pin<Box<dyn Future<Output = ()>>>,
     connect: Pin<Box<dyn Future<Output = Device>>>,
@@ -164,40 +164,37 @@ pub mod rand_data {
 /// Other helper functions
 pub mod helpers {
     pub fn button_vec() -> Vec<smartcast::Button> {
-        (0..30)
-            .map(|i| match i {
-                0 => smartcast::Button::SeekFwd,
-                1 => smartcast::Button::SeekBack,
-                2 => smartcast::Button::Pause,
-                3 => smartcast::Button::Play,
-                4 => smartcast::Button::Down,
-                5 => smartcast::Button::Left,
-                6 => smartcast::Button::Up,
-                7 => smartcast::Button::Right,
-                8 => smartcast::Button::Ok,
-                9 => smartcast::Button::Back,
-                10 => smartcast::Button::SmartCast,
-                11 => smartcast::Button::CCToggle,
-                12 => smartcast::Button::Info,
-                13 => smartcast::Button::Menu,
-                14 => smartcast::Button::Home,
-                15 => smartcast::Button::VolumeDown,
-                16 => smartcast::Button::VolumeUp,
-                17 => smartcast::Button::MuteOff,
-                18 => smartcast::Button::MuteOn,
-                19 => smartcast::Button::MuteToggle,
-                20 => smartcast::Button::PicMode,
-                21 => smartcast::Button::PicSize,
-                22 => smartcast::Button::InputNext,
-                23 => smartcast::Button::ChannelDown,
-                24 => smartcast::Button::ChannelUp,
-                25 => smartcast::Button::ChannelPrev,
-                26 => smartcast::Button::Exit,
-                27 => smartcast::Button::PowerOff,
-                28 => smartcast::Button::PowerOn,
-                29 => smartcast::Button::PowerToggle,
-                _ => panic!(),
-            })
-            .collect()
+        vec![
+            smartcast::Button::SeekFwd,
+            smartcast::Button::SeekBack,
+            smartcast::Button::Pause,
+            smartcast::Button::Play,
+            smartcast::Button::Down,
+            smartcast::Button::Left,
+            smartcast::Button::Up,
+            smartcast::Button::Right,
+            smartcast::Button::Ok,
+            smartcast::Button::Back,
+            smartcast::Button::SmartCast,
+            smartcast::Button::CCToggle,
+            smartcast::Button::Info,
+            smartcast::Button::Menu,
+            smartcast::Button::Home,
+            smartcast::Button::VolumeDown,
+            smartcast::Button::VolumeUp,
+            smartcast::Button::MuteOff,
+            smartcast::Button::MuteOn,
+            smartcast::Button::MuteToggle,
+            smartcast::Button::PicMode,
+            smartcast::Button::PicSize,
+            smartcast::Button::InputNext,
+            smartcast::Button::ChannelDown,
+            smartcast::Button::ChannelUp,
+            smartcast::Button::ChannelPrev,
+            smartcast::Button::Exit,
+            smartcast::Button::PowerOff,
+            smartcast::Button::PowerOn,
+            smartcast::Button::PowerToggle,
+        ]
     }
 }

@@ -1,0 +1,14 @@
+# -- Commented lines are currently unstable --
+
+edition = "2018"
+# enum_discrim_align_threshold = 20
+# force_multiline_blocks = true
+# format_strings = true
+# imports_layout = "Vertical"
+# match_block_trailing_comma = true
+# report_todo = "Always"
+# struct_field_align_threshold = 20
+# unstable_features = true
+use_field_init_shorthand = true
+# where_single_line = true
+# wrap_comments = true

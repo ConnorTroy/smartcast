@@ -118,7 +118,7 @@ impl CodeSet {
                 hash.insert(3, vec![0, 1, 8, 7, 2]);
             }
             Self::Secondary => {
-                hash.insert(3, vec![0, 1, 3, 5, 2]);
+                hash.insert(3, vec![0, 4, 3, 5, 2]);
             }
             _ => panic!("CodeSet not chosen"),
         }
