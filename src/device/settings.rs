@@ -1,11 +1,17 @@
 use super::{CommandDetail, Device, Response};
 use crate::error::{ClientError, Error, Result};
 
-use serde::{de, Deserialize};
+use async_trait::async_trait;
+use serde::{de, Deserialize, Serialize};
 use serde_json::Value;
 
-use std::fmt;
+use std::fmt::{self, Debug};
 use std::result::Result as StdResult;
+
+#[async_trait]
+pub trait Write<T> {
+    async fn write(&self, new_value: T) -> Result<()>;
+}
 
 #[derive(Debug, Clone)]
 pub enum EndpointBase {
@@ -185,6 +191,7 @@ impl SubSetting {
     ///
     /// ```
     /// # async fn example() -> Result<(), smartcast::Error> {
+
     /// use smartcast::{Device, SubSetting};
     ///
     /// let mut dev = Device::from_ip("192.168.0.14").await?;
@@ -228,6 +235,7 @@ impl SubSetting {
     /// // > },
     /// // > ...
     /// // > ]
+
     /// # Ok(())
     /// # }
     /// ```
@@ -307,6 +315,7 @@ impl SubSetting {
     ///
     /// ```
     /// # async fn example() -> Result<(), smartcast::Error> {
+
     /// use smartcast::{Device, SubSetting};
     ///
     /// let mut dev = Device::from_ip("192.168.0.14").await?;
@@ -332,6 +341,7 @@ impl SubSetting {
     ///     println!("{}", value);
     /// }
     /// // > Calibrated
+
     /// # Ok(())
     /// # }
     /// ```
@@ -357,12 +367,57 @@ impl SubSetting {
     ///
     /// # Example
     /// ```
-    /// todo!();
+    /// # async fn example() -> Result<(), smartcast::Error> {
+
+    /// use smartcast::{Device, SettingType, SubSetting};
+    ///
+    /// let dev = Device::from_ip("192.168.0.14").await?;
+    /// let settings: Vec<SubSetting> = dev.settings().await?;
+    ///
+    /// for setting in settings {
+    ///     match setting.setting_type() {
+    ///         // If the setting is a slider type, set it to the max
+    ///         SettingType::Slider => {
+    ///             let new_value = setting.slider_info().await?.unwrap().max;
+    ///             setting.update(new_value).await?;
+    ///         },
+    ///
+    ///         // If the setting is a list type, choose the first option
+    ///         SettingType::List
+    ///         | SettingType::XList => {
+    ///             let new_value = setting.elements().await?[0].clone();
+    ///             setting.update(new_value).await?;
+    ///         },
+    ///
+    ///         _ => {},
+    ///     }
+    /// }
+
+    /// # Ok(())
+    /// # }
     /// ```
-    #[allow(unused)] // Temp - TODO: remove
-    pub async fn write<T>(&self, new_value: T) -> Result<()> {
-        log::trace!("Write SubSetting");
-        todo!();
+    pub async fn update<T>(&self, new_value: T) -> Result<()>
+    where
+        SubSetting: Write<T>,
+        T: Serialize + for<'de> Deserialize<'de> + Debug,
+    {
+        log::trace!("Update SubSetting");
+
+        // Check read only and object is not Menu
+        if matches!(self.object_type, SettingType::Menu) || self.readonly || self.value.is_none() {
+            Err(ClientError::WriteSettingsReadOnly.into())
+        }
+        // Check new value type matches current type
+        else if let Err(_e) = serde_json::from_value::<T>(self.value.clone().unwrap()) {
+            Err(Error::setting_type_bad_match(
+                self.value.clone().unwrap(),
+                serde_json::json!(new_value),
+            ))
+        }
+        // Continue with Setting update
+        else {
+            self.write(new_value).await
+        }
     }
 
     /// If the setting object is a `Slider`, get the slider info. See [`SliderInfo`].
@@ -371,9 +426,10 @@ impl SubSetting {
     ///
     /// ```
     /// # async fn example() -> Result<(), smartcast::Error> {
+
     /// use smartcast::{Device, SubSetting};
     ///
-    /// let mut dev = Device::from_ip("192.168.0.14").await?;
+    /// let dev = Device::from_ip("192.168.0.14").await?;
     ///
     /// let settings: Vec<SubSetting> = dev.settings().await?;
     /// let pic_settings: Vec<SubSetting> = settings[0].expand().await?;
@@ -404,6 +460,7 @@ impl SubSetting {
     /// // >     min: -50,
     /// // >     center: 0,
     /// // > }
+
     /// # Ok(())
     /// # }
     /// ```
@@ -411,8 +468,8 @@ impl SubSetting {
         log::trace!("Get Slider Info");
         if self.object_type == SettingType::Slider {
             match self.static_response().await?.slider_info() {
-                Ok(info) => Ok(Some(info)),
-                Err(_) => Ok(self.dynamic_response().await?.slider_info().ok()),
+                Some(info) => Ok(Some(info)),
+                None => Ok(self.dynamic_response().await?.slider_info()),
             }
         } else {
             Ok(None)
@@ -456,6 +513,7 @@ impl SubSetting {
     /// // >     "Game",
     /// // >     "Sports",
     /// // > ],
+
     /// # Ok(())
     /// # }
     /// ```
@@ -518,6 +576,166 @@ impl SubSetting {
     fn add_parent_data(&mut self, parent: &SubSetting) {
         self.device = parent.device.clone();
         self.endpoint = format!("{}/{}", parent.endpoint, self.endpoint);
+    }
+}
+
+#[async_trait]
+impl Write<String> for SubSetting {
+    async fn write(&self, new_value: String) -> Result<()> {
+        match self.setting_type() {
+            SettingType::List | SettingType::XList => {
+                if !self.elements().await?.contains(&new_value) {
+                    return Err(Error::setting_non_element());
+                }
+            }
+            SettingType::Value => {}
+            _ => {
+                // Should have already been caught
+                panic!("Bad Type")
+            }
+        }
+        let device = self.device.clone().unwrap();
+        device
+            .send_command(CommandDetail::WriteSettings(
+                self.endpoint.clone(),
+                self.hashval.unwrap(),
+                serde_json::json!(new_value),
+            ))
+            .await
+            .map(|_| ())
+    }
+}
+
+#[async_trait]
+impl Write<i32> for SubSetting {
+    async fn write(&self, new_value: i32) -> Result<()> {
+        match self.setting_type() {
+            SettingType::Value => {}
+            SettingType::Slider => {
+                let slider_info = self.slider_info().await?.unwrap();
+
+                if new_value > slider_info.max || new_value < slider_info.min {
+                    return Err(Error::setting_outside_bounds(
+                        slider_info.min,
+                        slider_info.max,
+                        new_value,
+                    ));
+                }
+            }
+            _ => {
+                // Should have already been caught
+                panic!("Bad Type")
+            }
+        }
+        let device = self.device.clone().unwrap();
+        device
+            .send_command(CommandDetail::WriteSettings(
+                self.endpoint.clone(),
+                self.hashval.unwrap(),
+                serde_json::json!(new_value),
+            ))
+            .await
+            .map(|_| ())
+    }
+}
+
+#[async_trait]
+impl Write<bool> for SubSetting {
+    async fn write(&self, new_value: bool) -> Result<()> {
+        if matches!(self.setting_type(), SettingType::Value) {
+            let device = self.device.clone().unwrap();
+            device
+                .send_command(CommandDetail::WriteSettings(
+                    self.endpoint.clone(),
+                    self.hashval.unwrap(),
+                    serde_json::json!(new_value),
+                ))
+                .await
+                .map(|_| ())
+        } else {
+            // Should have already been caught
+            panic!("Bad Type")
+        }
+    }
+}
+
+#[async_trait]
+impl Write<f64> for SubSetting {
+    // Num types with max/min values larger than i32 should cast to f64 first because casting from float
+    // to int converts the value instead of simply truncating bits. We want to preserve MIN/MAX so that we can
+    // return errors instead of possibly returning successful because of bad conversions.
+    async fn write(&self, new_value: f64) -> Result<()> {
+        self.write(new_value as i32).await
+    }
+}
+
+#[async_trait]
+impl Write<f32> for SubSetting {
+    async fn write(&self, new_value: f32) -> Result<()> {
+        self.write(new_value as i32).await
+    }
+}
+
+#[async_trait]
+impl Write<u128> for SubSetting {
+    async fn write(&self, new_value: u128) -> Result<()> {
+        self.write(new_value as f64).await
+    }
+}
+
+#[async_trait]
+impl Write<u64> for SubSetting {
+    async fn write(&self, new_value: u64) -> Result<()> {
+        self.write(new_value as f64).await
+    }
+}
+
+#[async_trait]
+impl Write<u32> for SubSetting {
+    async fn write(&self, new_value: u32) -> Result<()> {
+        self.write(new_value as f64).await
+    }
+}
+
+#[async_trait]
+impl Write<u16> for SubSetting {
+    async fn write(&self, new_value: u16) -> Result<()> {
+        self.write(new_value as i32).await
+    }
+}
+
+#[async_trait]
+impl Write<u8> for SubSetting {
+    async fn write(&self, new_value: u8) -> Result<()> {
+        self.write(new_value as i32).await
+    }
+}
+
+#[async_trait]
+impl Write<i128> for SubSetting {
+    async fn write(&self, new_value: i128) -> Result<()> {
+        self.write(new_value as f64).await
+    }
+}
+
+#[async_trait]
+impl Write<i64> for SubSetting {
+    async fn write(&self, new_value: i64) -> Result<()> {
+        self.write(new_value as f64).await
+    }
+}
+
+#[async_trait]
+impl Write<i16> for SubSetting {
+    async fn write(&self, new_value: i16) -> Result<()> {
+        self.write(new_value as i32).await
+    }
+}
+
+#[async_trait]
+impl Write<i8> for SubSetting {
+    async fn write(&self, new_value: i8) -> Result<()> {
+        self.write(new_value as i32).await
     }
 }
 

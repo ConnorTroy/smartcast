@@ -57,7 +57,7 @@ impl Future for Test {
     }
 }
 
-/// Future starts up a [`SimulatedDevice`] and provides a [`Device`] client. Panics after duration passed in.
+/// Future starts up a [`SimulatedDevice`] and provides a [`Device`] client. Panics after specified duration.
 struct Simulate {
     startup: Pin<Box<dyn Future<Output = ()>>>,
     connect: Pin<Box<dyn Future<Output = Device>>>,

@@ -64,11 +64,18 @@ impl Setting {
             }
         }
 
+        let value = match setting_type {
+            SettingType::Slider => json!(0),
+            SettingType::Value => json!(5),
+            SettingType::List | SettingType::XList => json!(elements[0].clone()),
+            SettingType::Menu(_) => json!(serde_json::Value::Null),
+        };
+
         Self {
             name: rand_data::string(6),
             cname: setting_type.cname(),
             setting_type,
-            value: json!(serde_json::Value::Null),
+            value,
             hidden: false,
             hashval: rng.gen(),
             elements,
@@ -99,7 +106,7 @@ impl Setting {
                     "HASHVAL": {},
                     "NAME": "{}",
                     "TYPE": "{}",
-                    "VALUE": "{}"
+                    "VALUE": {}
                 }}
                 "#,
                 self.cname,
@@ -116,7 +123,7 @@ impl Setting {
                     "HASHVAL": {},
                     "NAME": "{}",
                     "TYPE": "{}",
-                    "VALUE": "{}"
+                    "VALUE": {}
                 }}
                 "#,
                 self.cname,
@@ -343,11 +350,13 @@ impl Setting {
 
     pub fn dynamic_value(&self) -> Value {
         let strvalue = self.dynamic_as_string();
+        // println!("{}", strvalue);
         serde_json::from_str(&strvalue).unwrap()
     }
 
     pub fn static_value(&self) -> Value {
         let strvalue = self.static_as_string();
+        // println!("{}", strvalue);
         serde_json::from_str(&strvalue).unwrap()
     }
 

@@ -386,13 +386,7 @@ pub fn write_setting(mut val: Value, setting: Setting) -> warp::reply::Json {
     // Instead just test command formatting
     let mut res = match (request, hashval, value) {
         (Ok(request), Ok(hashval), Ok(_)) if request == "MODIFY" && hashval == setting.hashval => {
-            format!(
-                r#"
-                {{
-                    {}
-                }}"#,
-                status!(Result::Success),
-            )
+            status!(Result::Success)
         }
         _ => status!(Result::InvalidParameter),
     };

@@ -44,7 +44,7 @@ pub(super) enum CommandDetail {
     GetCurrentApp,
     LaunchApp(Value),
     ReadSettings(EndpointBase, String),
-    // WriteSettings, // TODO (Brick warning)
+    WriteSettings(String, u32, Value),
     Custom(RequestType, String, Option<Value>),
 }
 
@@ -72,7 +72,7 @@ impl CommandDetail {
             Self::GetCurrentApp => "/app/current".into(),
             Self::LaunchApp(_) => "/app/launch".into(),
             Self::ReadSettings(base, endpoint) => base.as_str() + endpoint,
-            // Self::WriteSettings                 => "/menu_native/dynamic/tv_settings/SETTINGS_CNAME/ITEMS_CNAME",
+            Self::WriteSettings(endpoint, _, _) => format!("/menu_native/dynamic{}", endpoint),
             Self::Custom(_, endpoint, _) => endpoint.into(),
         }
     }
@@ -85,8 +85,8 @@ impl CommandDetail {
             | Self::CancelPairing { .. }
             | Self::RemoteButtonPress { .. }
             | Self::ChangeInput { .. }
-            | Self::LaunchApp(_) => RequestType::Put,
-            // Self::WriteSettings     => RequestType::Put,
+            | Self::LaunchApp(_)
+            | Self::WriteSettings(_, _, _) => RequestType::Put,
             Self::GetPowerState
             | Self::GetDeviceInfo
             | Self::GetCurrentInput
@@ -211,13 +211,12 @@ impl Serialize for Command {
                 command.serialize_field("VALUE", payload)?;
                 command.end()
             }
-            // TODO:
-            // CommandDetail::WriteSettings => {
-            //     let mut command = serializer.serialize_struct("", )?;
-            //     command.serialize_field("", )?;
-            //     command.serialize_field("", )?;
-            //     command.end()
-            // },
+            CommandDetail::WriteSettings(_, hashval, value) => {
+                command.serialize_field("REQUEST", "MODIFY")?;
+                command.serialize_field("HASHVAL", hashval)?;
+                command.serialize_field("VALUE", value)?;
+                command.end()
+            }
             _ => command.end(),
         }
     }

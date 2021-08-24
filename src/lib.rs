@@ -35,7 +35,7 @@
 //! - [x] Readable settings
 //! - [x] Get device state
 //! - [x] Virtual remote commands
-//! - [ ] Writeable settings
+//! - [x] Writeable settings
 //! - [ ] App launching
 mod device;
 mod discover;
