@@ -127,8 +127,8 @@ async fn settings_read() {
                         let found_slider_info = s.slider_info().await.unwrap().unwrap();
                         let exp_slider = support::expected_slider_info();
 
-                        if found_slider_info.dec_marker.is_empty()
-                            || found_slider_info.inc_marker.is_empty()
+                        if !found_slider_info.dec_marker.is_empty()
+                            || !found_slider_info.inc_marker.is_empty()
                             || found_slider_info.center.is_some()
                         {
                             assert_eq!(exp_slider.dec_marker, found_slider_info.dec_marker);

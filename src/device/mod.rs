@@ -440,7 +440,7 @@ impl Device {
     /// ```
     pub async fn key_press(&self, button: Button) -> Result<()> {
         log::trace!("Virtual Remote Key Press");
-        self.send_command(CommandDetail::RemoteButtonPress(KeyEvent::Press(button)))
+        self.virtual_remote(KeyEvent::Press, button)
             .await
             .map(|_| ())
     }
@@ -471,8 +471,7 @@ impl Device {
         log::trace!("Virtual Remote Key Down");
         log::debug!("key_down duration: {:?}", duration);
 
-        self.send_command(CommandDetail::RemoteButtonPress(KeyEvent::Down(button)))
-            .await?;
+        self.virtual_remote(KeyEvent::Down, button).await?;
         if let Some(duration) = duration {
             // Sleep for duration
             tokio::time::sleep(duration).await;
@@ -505,9 +504,7 @@ impl Device {
     /// ```
     pub async fn key_up(&self, button: Button) -> Result<()> {
         log::trace!("Virtual Remote Key Up");
-        self.send_command(CommandDetail::RemoteButtonPress(KeyEvent::Up(button)))
-            .await
-            .map(|_| ())
+        self.virtual_remote(KeyEvent::Up, button).await.map(|_| ())
     }
 
     /// Get the current device input
@@ -630,6 +627,24 @@ impl Device {
             // Same as port(), settings_root shouldn't ever be written outside initialization
             // so use try_read() to avoid awaiting and panic if it is locked
             panic!("Unable to settings root for read");
+        }
+    }
+
+    async fn virtual_remote(&self, event: KeyEvent, button: Button) -> Result<()> {
+        log::trace!("Virtual Remote Handler");
+        log::debug!("Event: {:?}, Button: {:?}", event, button);
+
+        match (
+            self.send_command(CommandDetail::RemoteButtonPress(event, button))
+                .await,
+            button.alt(),
+        ) {
+            (Ok(_), _) => Ok(()),
+            (Err(e), Some(button_alt)) if e.is_api() => self
+                .send_command(CommandDetail::RemoteButtonPress(event, button_alt))
+                .await
+                .map(|_| ()),
+            (Err(other), _) => Err(other),
         }
     }
 

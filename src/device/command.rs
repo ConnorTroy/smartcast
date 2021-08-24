@@ -1,6 +1,6 @@
 use super::{
     response::{self, Response},
-    Device, EndpointBase, KeyEvent, Result,
+    Button, Device, EndpointBase, KeyEvent, Result,
 };
 
 use serde::ser::{Serialize, SerializeStruct, Serializer};
@@ -34,7 +34,7 @@ pub(super) enum CommandDetail {
     },
     GetPowerState,
     GetDeviceInfo,
-    RemoteButtonPress(KeyEvent),
+    RemoteButtonPress(KeyEvent, Button),
     GetCurrentInput,
     GetInputList,
     ChangeInput {
@@ -197,8 +197,20 @@ impl Serialize for Command {
                 command.serialize_field("PAIRING_REQ_TOKEN", pairing_token)?;
                 command.end()
             }
-            CommandDetail::RemoteButtonPress(event) => {
-                command.serialize_field("KEYLIST", &(Vec::from(*event)))?;
+            CommandDetail::RemoteButtonPress(event, button) => {
+                #[derive(serde::Serialize)]
+                #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+                struct Helper {
+                    codeset: u8,
+                    code: u8,
+                    action: String,
+                }
+                let helper = Helper {
+                    codeset: button.codeset(),
+                    code: button.code(),
+                    action: event.to_string(),
+                };
+                command.serialize_field("KEYLIST", &(vec![helper]))?;
                 command.end()
             }
             CommandDetail::ChangeInput { name, hashval } => {
