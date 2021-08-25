@@ -1,6 +1,6 @@
 [package]
 name = "smartcast"
-version = "0.1.0"
+version = "0.1.1"
 description = "API to connect and control Vizio SmartCast devices"
 categories = ["api-bindings"]
 keywords = ["home-automation", "smart-home", "smart-tv", "soundbar"]

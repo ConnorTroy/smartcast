@@ -36,10 +36,11 @@
 //!
 //! - [x] Connect
 //! - [x] Pairing
-//! - [x] Readable settings
 //! - [x] Get device state
 //! - [x] Virtual remote commands
+//! - [x] Readable settings
 //! - [x] Writeable settings
+//! - [x] Current App
 //! - [ ] App launching
 mod device;
 mod discover;

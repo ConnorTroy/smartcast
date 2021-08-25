@@ -1,4 +1,5 @@
 # SmartCast Api
+
 [![crates.io](https://img.shields.io/crates/v/smartcast)](https://crates.io/crates/smartcast)
 [![Documentation](https://docs.rs/smartcast/badge.svg)](https://docs.rs/smartcast)
 [![Build](https://github.com/ConnorTroy/smartcast/actions/workflows/build.yml/badge.svg)](https://github.com/ConnorTroy/smartcast/actions/workflows/build.yml)
@@ -36,8 +37,9 @@ async fn example_main() -> Result<(), smartcast::Error> {
 
 - [x] Connect
 - [x] Pairing
-- [x] Readable settings
 - [x] Get device state
 - [x] Virtual remote commands
+- [x] Readable settings
 - [x] Writeable settings
+- [x] Current App
 - [ ] App launching
