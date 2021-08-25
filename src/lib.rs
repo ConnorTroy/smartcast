@@ -45,7 +45,7 @@ mod device;
 mod discover;
 mod error;
 
-pub use device::{Button, Device, DeviceInfo, Input, SettingType, SliderInfo, SubSetting};
+pub use device::{App, Button, Device, DeviceInfo, Input, SettingType, SliderInfo, SubSetting};
 pub use error::{ApiError, ClientError, Error, Result};
 
 use std::future::Future;

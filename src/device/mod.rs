@@ -1,16 +1,19 @@
 use super::discover::{ssdp, uaudp_followup, DEFAULT_SSDP_MAXTIME, SSDP_IP};
 use super::error::{Error, Result};
 
+mod apps;
 mod command;
 mod info;
 mod remote;
 mod response;
 mod settings;
 
+pub use self::apps::App;
 pub use self::info::{DeviceInfo, Input};
 pub use self::remote::Button;
 pub use self::settings::{SettingType, SliderInfo, SubSetting};
 
+use self::apps::{AppList, Payload};
 use self::command::{Command, CommandDetail};
 use self::remote::KeyEvent;
 use self::response::Response;
@@ -57,6 +60,14 @@ impl Device {
         }
         .to_string();
 
+        // Build Client
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(DEFAULT_TIMEOUT))
+            .danger_accept_invalid_certs(true)
+            .pool_idle_timeout(Some(Duration::from_secs(5)))
+            .build()?;
+
+        // Build Device
         let device = Self {
             inner: Arc::new(DeviceRef {
                 name: name.into(),
@@ -67,11 +78,8 @@ impl Device {
                 port: RwLock::new(0),
                 uuid: uuid.into(),
                 auth_token: RwLock::new(None),
-                client: reqwest::Client::builder()
-                    .timeout(Duration::from_secs(DEFAULT_TIMEOUT))
-                    .danger_accept_invalid_certs(true)
-                    .pool_idle_timeout(Some(Duration::from_secs(5)))
-                    .build()?,
+                app_list: RwLock::new(AppList::new(client.clone())),
+                client,
             }),
         };
 
@@ -506,6 +514,49 @@ impl Device {
         self.virtual_remote(KeyEvent::Up, button).await.map(drop)
     }
 
+    /// Get information about the app currently running on the device
+    ///
+    /// App info is sourced from a 3rd party. This method will return
+    /// `None` if the app data isn't available from that source.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn example() -> Result<(), smartcast::Error> {
+
+    /// use smartcast::Device;
+    ///
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
+    /// dev.set_auth_token("Z2zscc1udl");
+    ///
+    /// if let Some(app) = dev.current_app().await? {
+    ///     println!("{:#?}", app);
+    ///     // > App {
+    ///     // >     name: "Netflix",
+    ///     // >     description: "Award-winning series, movies and more",
+    ///     // >     image_url: "http://{icon_url}",
+    ///     // > },
+    /// }
+
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn current_app(&self) -> Result<Option<App>> {
+        // Get payload from device
+        let current_payload: Payload = self
+            .send_command(CommandDetail::GetCurrentApp)
+            .await?
+            .app_payload()?;
+
+        // Get app by payload
+        self.inner
+            .app_list
+            .write()
+            .await
+            .get_app(current_payload)
+            .await
+    }
+
     /// Get the current device input
     ///
     /// # Example
@@ -681,6 +732,7 @@ pub struct DeviceRef {
     port: RwLock<u16>,
     uuid: String,
     auth_token: RwLock<Option<String>>,
+    app_list: RwLock<AppList>,
     client: Client,
 }
 

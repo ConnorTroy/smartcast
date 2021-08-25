@@ -1,4 +1,4 @@
-use super::{DeviceInfo, Input, SliderInfo, SubSetting};
+use super::{DeviceInfo, Input, Payload, SliderInfo, SubSetting};
 use crate::error::{ApiError, Error, Result};
 
 use serde::Deserialize;
@@ -17,7 +17,7 @@ impl Response {
         serde_json::from_value(
             self.value
                 .get("ITEMS")
-                .unwrap_or_else(|| panic!("'ITEMS' not found in response"))
+                .ok_or_else(|| Error::Client("'ITEMS' not found".into()))?
                 .clone(),
         )
         .map_err(|e| e.into())
@@ -82,6 +82,10 @@ impl Response {
     pub fn elements(mut self) -> Result<Vec<String>> {
         self.first_item(Some("ELEMENTS"))
     }
+
+    pub fn app_payload(mut self) -> Result<Payload> {
+        self.first_item(Some("VALUE"))
+    }
 }
 
 impl From<Response> for Value {
@@ -117,6 +121,12 @@ impl From<Response> for Result<Vec<SubSetting>> {
 impl From<Response> for Option<SliderInfo> {
     fn from(response: Response) -> Self {
         response.slider_info()
+    }
+}
+
+impl From<Response> for Result<Payload> {
+    fn from(response: Response) -> Self {
+        response.app_payload()
     }
 }
 
