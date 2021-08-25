@@ -194,7 +194,7 @@ async fn settings_write() {
                         log::debug!(target: "test::simulated", "Type Value");
                         // Good Values
                         if s.is_boolean() {
-                            log::debug!("Type Value - Boolean");
+                            log::debug!(target: "test::simulated", "Type Value - Boolean");
                             assert!(s.update(true).await.is_ok());
                             assert!(s.update(false).await.is_ok());
                         } else if s.is_number() {

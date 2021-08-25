@@ -403,8 +403,12 @@ impl SubSetting {
     {
         log::trace!("Update SubSetting");
 
-        // Check read only and object is not Menu
-        if matches!(self.object_type, SettingType::Menu) || self.readonly || self.value.is_none() {
+        // Check object is not read only and is not Menu
+        if matches!(self.object_type, SettingType::Menu)
+            || self.readonly
+            || self.value.is_none()
+            || self.hashval.is_none()
+        {
             Err(ClientError::WriteSettingsReadOnly.into())
         }
         // Check new value type matches current type
@@ -602,7 +606,7 @@ impl Write<String> for SubSetting {
                 serde_json::json!(new_value),
             ))
             .await
-            .map(|_| ())
+            .map(drop)
     }
 }
 
@@ -635,7 +639,7 @@ impl Write<i32> for SubSetting {
                 serde_json::json!(new_value),
             ))
             .await
-            .map(|_| ())
+            .map(drop)
     }
 }
 
@@ -651,7 +655,7 @@ impl Write<bool> for SubSetting {
                     serde_json::json!(new_value),
                 ))
                 .await
-                .map(|_| ())
+                .map(drop)
         } else {
             // Should have already been caught
             panic!("Bad Type")

@@ -1,16 +1,19 @@
 use super::discover::{ssdp, uaudp_followup, DEFAULT_SSDP_MAXTIME, SSDP_IP};
 use super::error::{Error, Result};
 
+mod apps;
 mod command;
 mod info;
 mod remote;
 mod response;
 mod settings;
 
+pub use self::apps::App;
 pub use self::info::{DeviceInfo, Input};
 pub use self::remote::Button;
 pub use self::settings::{SettingType, SliderInfo, SubSetting};
 
+use self::apps::{AppList, Payload};
 use self::command::{Command, CommandDetail};
 use self::remote::KeyEvent;
 use self::response::Response;
@@ -34,7 +37,7 @@ pub const DEFAULT_TIMEOUT: u64 = 3;
 /// local network using [`discover_devices()`](crate::discover_devices). You can also connect directly
 /// using [`Device::from_ip()`](Device::from_ip) or [`Device::from_uuid()`](Device::from_uuid).
 ///
-/// Note that cloning `Device` is zero-cost and thread safe.
+/// Note that `Device` is [Arc] wrapped for flexibility so cloning is thread safe.
 #[derive(Clone)]
 pub struct Device {
     inner: Arc<DeviceRef>,
@@ -57,6 +60,14 @@ impl Device {
         }
         .to_string();
 
+        // Build Client
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(DEFAULT_TIMEOUT))
+            .danger_accept_invalid_certs(true)
+            .pool_idle_timeout(Some(Duration::from_secs(5)))
+            .build()?;
+
+        // Build Device
         let device = Self {
             inner: Arc::new(DeviceRef {
                 name: name.into(),
@@ -67,11 +78,8 @@ impl Device {
                 port: RwLock::new(0),
                 uuid: uuid.into(),
                 auth_token: RwLock::new(None),
-                client: reqwest::Client::builder()
-                    .timeout(Duration::from_secs(DEFAULT_TIMEOUT))
-                    .danger_accept_invalid_certs(true)
-                    .pool_idle_timeout(Some(Duration::from_secs(5)))
-                    .build()?,
+                app_list: RwLock::new(AppList::new(client.clone())),
+                client,
             }),
         };
 
@@ -266,6 +274,7 @@ impl Device {
     /// This method returns `pairing data` consisting of a `Pairing Token`, a `Challenge Type`, and the `Client ID` which
     /// will need to be passed into [`finish_pair()`](Self::finish_pair)
     /// or [`cancel_pair()`](Self::cancel_pair).
+    ///
     /// Note: It may not be necessary to pair your device if it is a soundbar.
     pub async fn begin_pair<S: Into<String>>(
         &self,
@@ -390,7 +399,7 @@ impl Device {
             challenge,
         })
         .await
-        .map(|_| ())
+        .map(drop)
     }
 
     /// Check whether the device is powered on
@@ -440,9 +449,7 @@ impl Device {
     /// ```
     pub async fn key_press(&self, button: Button) -> Result<()> {
         log::trace!("Virtual Remote Key Press");
-        self.virtual_remote(KeyEvent::Press, button)
-            .await
-            .map(|_| ())
+        self.virtual_remote(KeyEvent::Press, button).await.map(drop)
     }
 
     /// Emulates holding down a remote control button
@@ -504,7 +511,50 @@ impl Device {
     /// ```
     pub async fn key_up(&self, button: Button) -> Result<()> {
         log::trace!("Virtual Remote Key Up");
-        self.virtual_remote(KeyEvent::Up, button).await.map(|_| ())
+        self.virtual_remote(KeyEvent::Up, button).await.map(drop)
+    }
+
+    /// Get information about the app currently running on the device
+    ///
+    /// App info is sourced from a 3rd party. This method will return
+    /// `None` if the app data isn't available from that source.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # async fn example() -> Result<(), smartcast::Error> {
+
+    /// use smartcast::Device;
+    ///
+    /// let mut dev = Device::from_ip("192.168.0.14").await?;
+    /// dev.set_auth_token("Z2zscc1udl");
+    ///
+    /// if let Some(app) = dev.current_app().await? {
+    ///     println!("{:#?}", app);
+    ///     // > App {
+    ///     // >     name: "Netflix",
+    ///     // >     description: "Award-winning series, movies and more",
+    ///     // >     image_url: "http://{icon_url}",
+    ///     // > },
+    /// }
+
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn current_app(&self) -> Result<Option<App>> {
+        // Get payload from device
+        let current_payload: Payload = self
+            .send_command(CommandDetail::GetCurrentApp)
+            .await?
+            .app_payload()?;
+
+        // Get app by payload
+        self.inner
+            .app_list
+            .write()
+            .await
+            .get_app(current_payload)
+            .await
     }
 
     /// Get the current device input
@@ -625,7 +675,7 @@ impl Device {
             (Err(e), Some(button_alt)) if e.is_api() => self
                 .send_command(CommandDetail::RemoteButtonPress(event, button_alt))
                 .await
-                .map(|_| ()),
+                .map(drop),
             (Err(other), _) => Err(other),
         }
     }
@@ -682,6 +732,7 @@ pub struct DeviceRef {
     port: RwLock<u16>,
     uuid: String,
     auth_token: RwLock<Option<String>>,
+    app_list: RwLock<AppList>,
     client: Client,
 }
 

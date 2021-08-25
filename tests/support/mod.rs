@@ -119,7 +119,6 @@ pub async fn simulate(port: PortOption, device_type: DeviceType, command_set: Co
 /// Unexpected errors will panic.
 pub async fn connect_device() -> Device {
     let mut dev = None;
-    // spawn_fail_timer().await;
 
     // Try to connect until simulated device servers are ready
     while dev.is_none() {
@@ -127,7 +126,7 @@ pub async fn connect_device() -> Device {
             Ok(d) => dev = Some(d),
             Err(Error::Reqwest(e)) if e.is_connect() => {
                 log::warn!(target: "test::simulated::connect_device", "Unable to connect, retrying...");
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                sleep(Duration::from_millis(100)).await;
                 continue;
             }
             Err(e) => panic!("{}", e),
