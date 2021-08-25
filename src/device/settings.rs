@@ -403,8 +403,12 @@ impl SubSetting {
     {
         log::trace!("Update SubSetting");
 
-        // Check read only and object is not Menu
-        if matches!(self.object_type, SettingType::Menu) || self.readonly || self.value.is_none() {
+        // Check object is not read only and is not Menu
+        if matches!(self.object_type, SettingType::Menu)
+            || self.readonly
+            || self.value.is_none()
+            || self.hashval.is_none()
+        {
             Err(ClientError::WriteSettingsReadOnly.into())
         }
         // Check new value type matches current type
